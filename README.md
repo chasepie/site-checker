@@ -147,6 +147,10 @@ public class ExampleScraper(ILogger<ExampleScraper> logger)
 - Playwright + Browserless Chrome
 - WireGuard VPN (PIA)
 
+## What's Next
+- Add a no-code scraper builder — define CSS selectors, wait conditions, and interactions (clicks, scrolls) directly in the dashboard without writing a custom scraper class for less complicated checks
+- Add support for prompt-based AI-powered web scraping using services like ChatGPT, Claude, or Ollama
+
 ## Acknowledgments
 
 - Browser automation by [Playwright](https://playwright.dev/)
