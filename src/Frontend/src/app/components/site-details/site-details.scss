@@ -1,0 +1,70 @@
+#site-url {
+  display: -webkit-box;
+  line-clamp: 3;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  line-break: anywhere;
+}
+
+.pagination-container {
+  display: flex;
+  justify-content: space-between;
+
+  ul {
+    margin-bottom: 0;
+  }
+}
+
+.disabled-schedule {
+  opacity: .65;
+}
+
+.actions-container {
+  display: flex;
+  justify-content: space-between;
+  margin: 20px 0;
+}
+
+.card {
+  .container-fluid {
+    padding: 0;
+  }
+}
+
+table {
+  .date-col {
+    width: 225px;
+  }
+
+  .status-col {
+    width: 125px;
+  }
+
+  .vpn-col {
+    width: 175px;
+  }
+
+  .value-col {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .actions-col {
+    width: 1px;
+
+    .dropdown-toggle::after {
+      display: none;
+    }
+  }
+
+  tbody tr {
+    cursor: pointer;
+    vertical-align: middle;
+  }
+}

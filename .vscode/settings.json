@@ -1,0 +1,15 @@
+{
+  "eslint.workingDirectories": [
+    "${workspaceDir}/src/Frontend"
+  ],
+  "eslint.format.enable": true,
+  "eslint.useFlatConfig": true,
+  "files.associations": {
+    "*.esproj": "xml"
+  },
+  "chat.useAgentSkills": true,
+  "chat.mcp.gallery.enabled": true,
+  "chat.tools.terminal.autoApprove": {
+    "dotnet test": true
+  }
+}

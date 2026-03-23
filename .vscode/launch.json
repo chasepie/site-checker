@@ -1,0 +1,82 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch App",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj",
+      "serverReadyAction": {
+        "killOnServerStop": true,
+        "action": "debugWithChrome",
+        "pattern": "Local:\\s+(https?://127.0.0.1:\\d+)",
+        "webRoot": "${workspaceFolder}/src/Frontend"
+      },
+      "launchConfigurationId": "TargetFramework=;SPA",
+      "linux": {
+        "serverReadyAction": {
+          "action": "openExternally"
+        }
+      },
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      "name": "Launch Scalar",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj",
+      "serverReadyAction": {
+        "action": "debugWithChrome",
+        "killOnServerStop": true,
+        "uriFormat": "%s/scalar"
+      },
+      "launchConfigurationId": "TargetFramework=;Scalar"
+    },
+    {
+      "name": "Attach to Docker",
+      "type": "docker",
+      "request": "attach",
+      "netCore": {
+        "appProject": "${workspaceFolder}/src/Backend/Backend.csproj"
+      },
+      "containerName": "site-checker"
+    },
+    {
+      "name": "Launch Playwright Server",
+      "request": "launch",
+      "runtimeArgs": [
+        "run-script",
+        "start"
+      ],
+      "runtimeExecutable": "npm",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node",
+      "cwd": "${workspaceFolder}/src/LocalPlaywright",
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch App and Playwright",
+      "configurations": [
+        "Launch Playwright Server",
+        "Launch App"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Launch App with Containers",
+      "preLaunchTask": "Run Docker Containers",
+      "configurations": [
+        "Launch App"
+      ],
+      "stopAll": true
+    }
+  ]
+}

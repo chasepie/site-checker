@@ -1,0 +1,26 @@
+<div id="vpn-container">
+  <div id="current-container">
+    <h2>Current Location: {{ currentLocation()?.name }}</h2>
+    <div class="btn-group">
+      <div class="btn-group" ngbDropdown
+           placement="bottom-end">
+        <button type="button" class="btn btn-primary"
+                (click)="this.changeLocation()"
+                [disabled]="this.isChanging()">Change <i class="bi bi-arrow-clockwise"></i></button>
+        <button class="btn btn-primary dropdown-toggle-split"
+                type="button" ngbDropdownToggle
+                [disabled]="this.isChanging()"></button>
+        <div class="dropdown-menu" ngbDropdownMenu>
+          <button (click)="this.changeLocation(true)"
+                  ngbDropdownItem
+                  [disabled]="this.isChanging()">Exclude Current</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="grid-container">
+    <ag-grid-angular [rowData]="this.rowData()"
+                     [gridOptions]="this.gridOptions" />
+  </div>
+</div>

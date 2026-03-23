@@ -1,0 +1,39 @@
+<nav class="navbar navbar-expand-md bg-body-tertiary">
+  <div class="container-fluid">
+    <button id="list-toggler" class="navbar-toggler" type="button"
+            (click)="this.openSiteList()">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <a class="navbar-brand" href="#">Site Checker</a>
+    <button id="sidebar-toggler" class="btn navbar-toggler" type="button"
+            (click)="this.openSidebar(content)">
+      <i class="bi bi-three-dots"></i>
+    </button>
+
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav">
+        @for (page of this.pages; track $index) {
+        <li class="nav-item">
+          <a class="nav-link" [routerLink]="page.route">{{ page.name }}</a>
+        </li>
+        }
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<ng-template #content let-offcanvas>
+  <div class="offcanvas-header">
+    <h4 class="offcanvas-title">Site Checker</h4>
+    <button type="button" class="btn-close" aria-label="Close" (click)="offcanvas.dismiss('Cross click')"></button>
+  </div>
+  <div class="offcanvas-body">
+    <ul class="navbar-nav">
+      @for (page of this.pages; track $index) {
+      <li class="nav-item">
+        <a class="nav-link" [routerLink]="page.route" (click)="offcanvas.dismiss(page.name)">{{ page.name }}</a>
+      </li>
+      }
+    </ul>
+  </div>
+</ng-template>

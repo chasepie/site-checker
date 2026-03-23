@@ -1,0 +1,33 @@
+@import '../../node_modules/bootstrap/scss/functions';
+@import '../../node_modules/bootstrap/scss/variables';
+@import '../../node_modules/bootstrap/scss/mixins';
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+@include media-breakpoint-up(lg) {
+  .navbar-toggler {
+    display: none;
+  }
+}
+
+.vpn-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+
+  #vpnLocation {
+    margin: 0;
+  }
+}
+
+.links-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}

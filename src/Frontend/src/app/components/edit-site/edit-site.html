@@ -1,0 +1,198 @@
+<div class="modal-header">
+  <h4 class="modal-title">Edit Site</h4>
+  <button type="button" class="btn-close" aria-label="Close"
+          (click)="activeModal.dismiss('Cross click')"></button>
+</div>
+<div class="modal-body">
+  <form class="fluid-container" novalidate>
+    <div class="row g-3">
+      <div class="col-12 col-md-12">
+        <label for="name" class="form-label">Name</label>
+        <input id="name" class="form-control" type="text"
+               [formField]="this.siteForm.name" appFormValid />
+        @if (this._isValidated()) {
+        <div class="invalid-feedback">
+          {{ this.siteForm.name().errors()[0]?.message }}
+        </div>
+        }
+      </div>
+
+      <div class="col-12">
+        <label for="url" class="form-label">URL</label>
+        <textarea id="url" class="form-control" rows="5"
+                  [formField]="this.siteForm.url" appFormValid>
+        </textarea>
+        @if (this.siteForm.url().invalid() && this._isValidated()) {
+        <div class="invalid-feedback">
+          {{ this.siteForm.url().errors()[0]?.message }}
+        </div>
+        }
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-body row g-3">
+
+            <div class="col-12">
+              <div class="form-check form-switch form-check-reverse">
+                <h5 class="form-check-label card-title" for="scheduleEnabled">Schedule</h5>
+                <input id="scheduleEnabled" class="form-check-input" type="checkbox"
+                       [formField]="this.siteForm.schedule.enabled" appFormValid />
+              </div>
+            </div>
+
+            <div class="col-6 col-sm-4">
+              <label for="scheduleStart" class="form-label">Start</label>
+              <input id="scheduleStart" class="form-control" type="time"
+                     [formField]="this.siteForm.schedule.start" appFormValid />
+            </div>
+
+            <div class="col-6 col-sm-4">
+              <label for="scheduleEnd" class="form-label">End</label>
+              <input id="scheduleEnd" class="form-control" type="time"
+                     [formField]="this.siteForm.schedule.end" appFormValid />
+            </div>
+
+            <div class="col-6 col-sm-4">
+              <label for="scheduleInterval" class="form-label">Interval</label>
+              <input id="scheduleInterval" class="form-control" type="number"
+                     [formField]="this.siteForm.schedule.interval" appFormValid />
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-12 col-lg-4">
+        <div class="card">
+          <div class="card-body row g-3">
+
+            <h5 class="card-title">Notifications</h5>
+
+            <div class="col-6 col-lg-12">
+              <label for="knownFailuresThreshold" class="form-label">Known Failures Threshold</label>
+              <input id="knownFailuresThreshold" class="form-control" type="number" appFormValid
+                     [formField]="this.siteForm.knownFailuresThreshold" />
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-8">
+        <div class="card">
+          <div class="card-body row g-3">
+
+            <h5 class="card-title">Pushover</h5>
+
+            <div class="col-6">
+              <label for="successPriority" class="form-label">Success Priority</label>
+              <select id="successPriority" class="form-select" appFormValid
+                      [formField]="this.pushoverForm.successPriority">
+                @for (o of this.priorities; track $index) {
+                <option [value]="o.value">{{ o.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="col-6">
+              <label for="failurePriority" class="form-label">Failure Priority</label>
+              <select id="failurePriority" class="form-select" appFormValid
+                      [formField]="this.pushoverForm.failurePriority">
+                @for (o of this.priorities; track $index) {
+                <option [value]="o.value">{{ o.label }}</option>
+                }
+              </select>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="row">
+      <div class="col-12">
+
+        <div class="card">
+          <div class="card-body row g-3">
+            <h5 class="card-title">Discord</h5>
+
+            <div class="col-6 col-lg-4">
+              <label for="successEnabled" class="form-label">Success</label>
+              <select id="successEnabled" class="form-select" appFormValid
+                      [formField]="this.discordForm.successEnabled">
+                @for (o of this.onOffOptions; track $index) {
+                <option [value]="o.value">{{ o.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="col-6 col-lg-4">
+              <label for="failureEnabled" class="form-label">Failure</label>
+              <select id="failureEnabled" class="form-select" appFormValid
+                      [formField]="this.discordForm.failureEnabled">
+                @for (o of this.onOffOptions; track $index) {
+                <option [value]="o.value">{{ o.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="col-6 col-lg-4">
+              <label for="discordChannelId" class="form-label">Discord Channel ID</label>
+              <input id="discordChannelId" class="form-control" type="text"
+                     [formField]="this.discordForm.channelId" appFormValid />
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-body row g-3">
+            <h5 class="card-title">Options</h5>
+
+            <div class="col-12 col-sm-6">
+              <div class="form-check form-check">
+                <input class="form-check-input" type="checkbox"
+                       id="useVpn"
+                       [formField]="this.siteForm.useVpn">
+                <label class="form-check-label" for="useVpn">Use VPN</label>
+              </div>
+            </div>
+
+            <div class="col-12 col-sm-6">
+              <div class="form-check form-check">
+                <input class="form-check-input" type="checkbox"
+                       id="alwaysTakeScreenshot"
+                       [formField]="this.siteForm.alwaysTakeScreenshot">
+                <label class="form-check-label" for="alwaysTakeScreenshot">Always Take Screenshot</label>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </form>
+</div>
+<div class="modal-footer">
+  <div>
+    <button type="button" class="btn btn-primary"
+            (click)="save()" [disabled]="!this.siteForm().dirty()">Save</button>
+    <button type="button" class="btn btn-secondary"
+            (click)="this.resetForm()"
+            [disabled]="!this.siteForm().dirty()">Undo</button>
+  </div>
+  <button type="button" class="btn btn-outline-secondary"
+          (click)="activeModal.close('Close click')">Close</button>
+</div>

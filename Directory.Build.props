@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <UserSecretsId>9ac032d9-22de-4524-b069-d3ae5ef35390</UserSecretsId>
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)</SolutionDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SiteChecker.$(MSBuildProjectName)</RootNamespace>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <PropertyGroup Label="CodeAnalysis">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisMode>Recommended</AnalysisMode>
+  </PropertyGroup>
+
+  <PropertyGroup Label="ReferenceTrimmer">
+    <EnableReferenceTrimmer>true</EnableReferenceTrimmer>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    There's an issue with .esproj files on non-Windows systems where it will create an
+    `obj\Debug` folder as a subfolder of the `obj/Debug` folder. This target replaces
+    backslashes with forward slashes in the paths to prevent this from happening.
+  -->
+  <Target Name="FixPackagePropsPath" BeforeTargets="GeneratePackageJsonProps"
+    Condition="!$([System.OperatingSystem]::IsWindows()) AND '$(MSBuildProjectExtension)' == '.esproj'">
+    <PropertyGroup>
+      <IntermediateOutputPath>$(IntermediateOutputPath.Replace('\','/'))</IntermediateOutputPath>
+      <PackagePropsPath>$(PackagePropsPath.Replace('\','/'))</PackagePropsPath>
+    </PropertyGroup>
+  </Target>
+</Project>

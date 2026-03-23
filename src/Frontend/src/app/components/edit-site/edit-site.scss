@@ -1,0 +1,29 @@
+#url {
+  line-break: anywhere;
+}
+
+.card {
+  margin-top: 1rem;
+
+  h5.card-title {
+    margin-bottom: 0;
+  }
+}
+
+.form-check-reverse {
+  display: flex;
+
+  .form-check-label {
+    padding-right: .5em;
+  }
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  div button {
+    margin-right: .5em;
+  }
+}

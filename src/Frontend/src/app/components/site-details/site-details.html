@@ -1,0 +1,109 @@
+@if (site(); as site) {
+<h2>{{ site.name }}</h2>
+
+<div class="container-fluid">
+  <div class="row g-3">
+    <div class="col-12">
+      <h5>URL</h5>
+      <a id="site-url" href="{{ site.url }}" target="_blank">{{ site.url }}</a>
+    </div>
+    <div class="col-12 col-sm-6">
+      <h5>Discord Channel ID</h5>
+      <div>{{ site.discordConfig.channelId || 'N/A' }}</div>
+    </div>
+    <div class="col-12 col-sm-6">
+      <h5>Schedule</h5>
+      <div>{{ scheduleText()}}</div>
+    </div>
+    <div class="col-12">
+      <h5>Options</h5>
+      <div>{{ optionsText()}}</div>
+    </div>
+  </div>
+</div>
+
+<div class="actions-container">
+  <div ngbDropdown>
+    <button type="button" class="btn btn-primary" ngbDropdownToggle>
+      Actions
+    </button>
+    <div ngbDropdownMenu>
+      <button ngbDropdownItem (click)="this.editSite()">Edit Site</button>
+      <div class="dropdown-divider"></div>
+      <button ngbDropdownItem (click)="this.queueCheck()">Queue Check</button>
+      <button ngbDropdownItem (click)="this.createEmptyCheck()">Create Empty Check</button>
+    </div>
+  </div>
+  <div>
+    <button type="button" class="btn btn-outline-danger"
+            (click)="this.deleteAllChecks()">Delete All Checks</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+
+    <div class="table-responsive">
+      <table class="table table-striped table-hover">
+        <thead>
+          <tr>
+            <th scope="col" class="date-col">Start Date</th>
+            <th scope="col" class="status-col">Status</th>
+            <th scope="col" class="vpn-col">VPN Location</th>
+            <th scope="col" class="value-col">Value</th>
+            <th scope="col" class="actions-col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (siteChecks().length === 0) {
+          <tr>
+            <td colspan="5" class="text-center">No site checks available.</td>
+          </tr>
+          }
+
+          @for (sc of siteChecks(); track sc.id) {
+          <tr (click)="openCheckDetails(sc)" style="cursor: pointer;">
+            <td class="date-col">{{ sc.startDate | date: 'medium' }}</td>
+            <td class="status-col">{{ sc.status }}</td>
+            <td class="vpn-col">{{ sc.vpnLocationId ?? '' }}</td>
+            <td class="value-col"><code>{{sc.value}}</code></td>
+            <td class="actions-col" (click)="$event.stopPropagation()">
+              <div ngbDropdown container="body">
+                <button type="button" class="btn btn-sm" ngbDropdownToggle>
+                  <i class="bi bi-three-dots-vertical"></i>
+                </button>
+                <div ngbDropdownMenu>
+                  <button ngbDropdownItem (click)="deleteCheck(sc)">Delete</button>
+                </div>
+              </div>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-container">
+      <ngb-pagination [collectionSize]="totalItemCount()"
+                      [page]="pageNumber()"
+                      (pageChange)="pageNumber.set($event)"
+                      [pageSize]="pageSize()"
+                      class="no-margin-bottom">
+      </ngb-pagination>
+
+      <div>
+        <select class="form-select" [(ngModel)]="pageSize">
+          @for (size of optionsPageSize; track size) {
+          <option [ngValue]="size">{{ size }} items</option>
+          }
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+} @else {
+<div class="site-details">
+  <p>Please select a site from the list to view its details.</p>
+</div>
+}

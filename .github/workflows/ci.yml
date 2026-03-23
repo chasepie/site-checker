@@ -1,0 +1,62 @@
+name: Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: "src/Frontend/.nvmrc"
+
+      - name: Restore NuGet Packages
+        run: dotnet restore --locked-mode
+
+      - name: Build Solution
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run Tests
+        run: |
+          dotnet test \
+            --no-build \
+            --coverage \
+            --coverage-output-format cobertura \
+            --configuration Release \
+            --verbosity normal
+
+      - name: Generate Code Coverage Report
+        uses: danielpalme/ReportGenerator-GitHub-Action@v5
+        with:
+          reports: "**/*.cobertura.xml"
+          targetdir: "coveragereport"
+          reporttypes: "MarkdownSummaryGithub"
+          filefilters: "-**/*.g.cs" # exclude generated files
+
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v3
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+
+        with:
+          recreate: true
+          path: "coveragereport/SummaryGithub.md"

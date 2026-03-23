@@ -1,0 +1,17 @@
+.card {
+  height: fit-content;
+  max-height: 100%;
+  overflow-y: auto;
+
+  .list-group {
+    .ms-2 {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+
+      .fw-bold {
+        white-space: normal;
+      }
+    }
+  }
+}

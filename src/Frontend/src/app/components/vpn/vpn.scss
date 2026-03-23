@@ -1,0 +1,37 @@
+$padding: 25px;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  padding: $padding;
+  flex: 1;
+}
+
+#vpn-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  flex: 1;
+  gap: $padding;
+  max-width: 802px;
+}
+
+#current-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+#grid-container {
+  width: 100%;
+  height: 100%;
+
+  ag-grid-angular {
+    height: 100%;
+  }
+}

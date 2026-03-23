@@ -1,0 +1,75 @@
+services:
+  app:
+    container_name: site-checker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - TZ=America/New_York
+      - BROWSERLESS_URL=ws://browserless:3000
+      - BROWSERLESS_URL_VPN=ws://vpn:3000
+      - VPN_CHANGE_INTERVAL=10
+    volumes:
+      - ./site-checker/data:/app/data
+      - ./site-checker/logs:/app/logs
+      - ./site-checker/pia:/pia
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - browserless
+      - browserless-vpn
+
+  browserless:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: site-checker-browserless
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - TZ=America/New_York
+      - TOKEN=${BROWSERLESS_TOKEN}
+      - TIMEOUT=180000
+
+  browserless-vpn:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: site-checker-browserless-vpn
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+      - TOKEN=${BROWSERLESS_TOKEN}
+      - TIMEOUT=180000
+    network_mode: "service:vpn"
+    depends_on:
+      vpn:
+        condition: service_healthy
+
+  vpn:
+    image: thrnz/docker-wireguard-pia:latest
+    container_name: site-checker-vpn
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./site-checker/pia:/pia
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      - .env
+    environment:
+      - TZ=America/New_York
+      - USER=${PIA_USERNAME}
+      - PASS=${PIA_PASSWORD}
+      - ACTIVE_HEALTHCHECKS=1
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.default.disable_ipv6=1
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.lo.disable_ipv6=1
+    command: >
+      /bin/bash -c "[ -f /pia/loc.txt ] || echo 'us_michigan-pf' > /pia/loc.txt
+      && LOC=$(cat /pia/loc.txt) /scripts/run"

@@ -1,0 +1,18 @@
+:host {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  padding: 25px;
+  gap: 25px;
+}
+
+div.offcanvas-body {
+  height: 100%;
+}
+
+.details-container {
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}

@@ -1,0 +1,24 @@
+pre {
+  margin-bottom: 0;
+  overflow-y: auto;
+
+  code {
+    white-space: pre-wrap;
+  }
+}
+
+.title-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.screenshot-container {
+  max-height: 500px;
+  overflow: auto;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: space-between;
+}

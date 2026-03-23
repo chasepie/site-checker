@@ -1,0 +1,51 @@
+@if (siteCheck(); as sc) {
+<div class="modal-header">
+  <h4 class="modal-title">Details - #{{sc.id}}</h4>
+  <button type="button" class="btn-close" aria-label="Close" (click)="activeModal.dismiss('Cross click')"></button>
+</div>
+<div class="modal-body">
+  <div class="container-fluid">
+    <div class="row g-3">
+      <div class="col-12 col-sm-6">
+        <h5>Start Date</h5>
+        <div>{{sc.startDate | date:'medium'}}</div>
+      </div>
+
+      <div class="col-12 col-sm-6">
+        <h5>Done Date</h5>
+        <div>{{sc.doneDate ? (sc.doneDate | date: 'medium') : ''}}</div>
+      </div>
+
+      <div class="col-12 col-sm-6">
+        <h5>Status</h5>
+        <div>{{sc.status}}</div>
+      </div>
+
+      <div class="col-12 col-sm-6">
+        <h5>VPN Location</h5>
+        <div>{{sc.vpnLocationId ?? ''}}</div>
+      </div>
+
+      <div class="col-12">
+        <h5>Value</h5>
+        <pre><code>{{sc.value}}</code></pre>
+      </div>
+
+      <div class="col-12">
+        <h5>Screenshot</h5>
+        @if (screenshot(); as screenshot) {
+        <div class="screenshot-container">
+          <img [src]="screenshot" alt="Screenshot" class="img-fluid" />
+        </div>
+        } @else {
+        <p>No screenshot available.</p>
+        }
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-footer">
+  <button type="button" class="btn btn-danger" (click)="deleteSiteCheck()">Delete</button>
+  <button type="button" class="btn btn-outline-secondary" (click)="activeModal.close('Close click')">Close</button>
+</div>
+}

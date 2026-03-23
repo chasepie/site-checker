@@ -1,0 +1,184 @@
+{
+  // For more information, visit: https://go.microsoft.com/fwlink/?LinkId=733558
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Clean Repo",
+      "type": "process",
+      "command": [
+        "git"
+      ],
+      "args": [
+        "clean",
+        "-fdX",
+        "--exclude=!.env"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build Solution",
+      "type": "process",
+      "command": [
+        "dotnet"
+      ],
+      "args": [
+        "build",
+        "--configuration",
+        "Debug",
+        "--verbosity",
+        "detailed"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Build Container",
+      "type": "process",
+      "command": [
+        "docker"
+      ],
+      "args": [
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "build",
+        "--build-arg",
+        "CONFIGURATION=Debug"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Containers",
+      "type": "process",
+      "dependsOn": [
+        "Build Container"
+      ],
+      "command": [
+        "docker"
+      ],
+      "args": [
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "up",
+        "-d"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Stop Containers",
+      "type": "process",
+      "command": [
+        "docker"
+      ],
+      "args": [
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "down"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Restore DotNet Tools",
+      "type": "process",
+      "command": [
+        "dotnet"
+      ],
+      "args": [
+        "tool",
+        "restore"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/src/Database"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Create Migration",
+      "dependsOn": [
+        "Restore DotNet Tools"
+      ],
+      "type": "process",
+      "command": [
+        "dotnet"
+      ],
+      "args": [
+        "tool",
+        "run",
+        "dotnet-ef",
+        "migrations",
+        "add",
+        "${input:MigrationName}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/src/Database"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Browserless container",
+      "type": "process",
+      "command": [
+        "docker"
+      ],
+      "args": [
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "up",
+        "-d",
+        "browserless"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Browserless VPN container",
+      "type": "process",
+      "command": [
+        "docker"
+      ],
+      "args": [
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "up",
+        "-d",
+        "browserless-vpn"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Docker Containers",
+      "dependsOn": [
+        "Run Browserless container",
+        "Run Browserless VPN container",
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "MigrationName",
+      "type": "promptString",
+      "description": "Enter the name of the new migration",
+    }
+  ],
+}

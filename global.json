@@ -1,0 +1,14 @@
+{
+  "sdk": {
+    "version": "10.0.201",
+    "allowPrerelease": false,
+    "rollForward": "latestFeature"
+  },
+  "msbuild-sdks": {
+    "MSTest.Sdk": "4.1.0",
+    "Microsoft.VisualStudio.JavaScript.SDK": "1.0.4991845"
+  },
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  }
+}

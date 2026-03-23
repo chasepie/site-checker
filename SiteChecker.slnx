@@ -1,0 +1,21 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="src/Backend/Backend.csproj" />
+  <Project Path="src/Database/Database.csproj" />
+  <Project Path="src/Scraper/Scraper.csproj" />
+  <Project Path="src/Utilities/Utilities.csproj" />
+  <Project Path="test/Scraper.Test/Scraper.Test.csproj" />
+  <Project Path="test/Utilities.Test/Utilities.Test.csproj" />
+  <Project Path="src/Frontend/Frontend.esproj">
+    <Build Solution="*|Any CPU" />
+    <Deploy Solution="*|Any CPU" />
+  </Project>
+  <Project Path="src/LocalPlaywright/LocalPlaywright.esproj">
+    <Build Solution="*|Any CPU" />
+    <Deploy Solution="*|Any CPU" />
+  </Project>
+</Solution>
