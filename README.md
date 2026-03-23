@@ -1,16 +1,16 @@
 # Site Checker
 
-Site Checker is a self-hostable web app that monitors websites for availability and content changes using headless browser automation, custom scraping logic, and VPN routing to bypass bot detection. It provides real-time notifications via Pushover and Discord, and a dashboard built with Angular utilizing SignalR for real-time updates.
+Site Checker is a self-hostable web app that monitors websites for availability and content changes using headless browser automation, custom scraping logic, and VPN routing to bypass bot detection. It provides real-time notifications via Pushover and Discord, and a live dashboard built with Angular using SignalR for real-time updates.
 
-I built this project because I wanted to know the moment a product I wanted to buy was back in stock (think during the great GPU shortage), a hotel room was available for a convention I wanted to attend that usually was booked in minutes, or a price dropped on something I wanted to buy (hopefully RAM pricing some day 🫠). I saw that similar applications already existed that tried to tackle this, but they weren't dynamic enough to be able to navigate through websites if the content I needed to check wasn't bookmark-able (such as handling hotel reservation dates, scrolling down pages and clicking links, etc.).
+I built it because I wanted to know the moment a product was back in stock, a hotel room opened up, or a price dropped, but existing apps/tools weren't dynamic enough to handle sites where the content I needed wasn't directly bookmarkable (think navigating to a specific date on a hotel search, scrolling through a page, clicking through to a product, etc.). Bots and scrapers have become a real problem over the last few years, so I deliberately kept this tool passive — it only checks at a set interval and notifies me of changes, leaving the actual purchase to me.
 
-Bots and scapers have become a huge problem over the last few years, and I didn't want to add to that problem by building something that would constantly hammer websites with requests or automatically purchase items on my behalf. So instead, I built something that would only scrape websites every so often and would only notifiy me when something changed, and I would be the one to go and check the website and make the purchase manually. It helped me purchase computer components that I still use today and attend a future convention that I had been trying to get into for months, and I hope it can help you with similar use cases!
+I've been able to use this tool to purchase a GPU during the 2020 chip shortage, snag hard-to-get hotel rooms for future conventions, and monitor price drops on products I want to buy (hopefully RAM prices some day 🫠). It's also been a fun opportunity to experiment with new technologies like Playwright, Angular Signals, and the latest C#/.NET features. Hopefully it's useful to others too!
 
-## Dashboard
+**Dashboard**
 
 <img src="./docs/screenshots/homepage.png" alt="Homepage screenshot" width="800" />
 
-## Details View
+**Details View**
 
 <img src="./docs/screenshots/details.png" alt="Details screenshot" width="800" />
 
@@ -50,14 +50,14 @@ Bots and scapers have become a huge problem over the last few years, and I didn'
 - **Scraper** — Reusable Playwright-based scraping library
 - **Notifiers** — Pushover and Discord notification implementations
 
-## Prerequisites
+## Quick Start
+
+### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 24+](https://nodejs.org/) and npm
 - [Docker](https://www.docker.com/) and Docker Compose
 - [Private Internet Access VPN](https://www.privateinternetaccess.com/) account (for VPN features)
-
-## Quick Start
 
 ### Using Docker (Recommended)
 
@@ -128,14 +128,12 @@ public class ExampleScraper(ILogger<ExampleScraper> logger)
 ## Technology Stack
 
 ### Backend
-- .NET 10 / C# 14
+- .NET 10 / C# 14 (uses first-class [extension members](https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14#extension-members) over the traditional `static class` pattern)
 - ASP.NET Core
 - Entity Framework Core + SQLite
 - OpenTelemetry
-
-> The backend uses the C# 14 [extension members](https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14#extension-members) feature, which replaces the traditional `static class` extension method pattern with a first-class `extension` block syntax.
-
-> Discord notifications use [NetCord](https://github.com/NetCord/NetCord), currently in pre-release (`1.0.0-alpha`). The library is stable in practice but the version number reflects its pre-1.0 API status.
+- [Reinforced.Typings](https://github.com/reinforced/Reinforced.Typings) — generates TypeScript interfaces and Zod schemas from C# models at build time
+- [NetCord](https://github.com/NetCord/NetCord) for Discord notifications (pre-release `1.0.0-alpha`, stable in practice)
 
 ### Frontend
 - Angular 21
