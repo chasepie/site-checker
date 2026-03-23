@@ -1,8 +1,18 @@
 # Site Checker
 
-A web application that monitors website availability and content changes using headless browser automation. Supports VPN-routed scraping for location-specific content, real-time notifications, and a live WebSocket dashboard.
+Site Checker is a self-hostable web app that monitors websites for availability and content changes using headless browser automation, custom scraping logic, and VPN routing to bypass bot detection. It provides real-time notifications via Pushover and Discord, and a live dashboard built with Angular using SignalR for real-time updates.
 
-Built with ASP.NET Core, Angular 21, and Playwright.
+I built it because I wanted to know the moment a product was back in stock, a hotel room opened up, or a price dropped, but existing apps/tools weren't dynamic enough to handle sites where the content I needed wasn't directly bookmarkable (think navigating to a specific date on a hotel search, scrolling through a page, clicking through to a product, etc.). Bots and scrapers have become a real problem over the last few years, so I deliberately kept this tool passive — it only checks at a set interval and notifies me of changes, leaving the actual purchase to me.
+
+I've been able to use this tool to purchase a GPU during the 2020 chip shortage, snag hard-to-get hotel rooms for future conventions, and monitor price drops on products I want to buy (hopefully RAM prices some day 🫠). It's also been a fun opportunity to experiment with new technologies like Playwright, Angular Signals, and the latest C#/.NET features. Hopefully it's useful to others too!
+
+**Dashboard**
+
+<img src="./docs/screenshots/homepage.png" alt="Homepage screenshot" width="800" />
+
+**Details View**
+
+<img src="./docs/screenshots/details.png" alt="Details screenshot" width="800" />
 
 ## Features
 
@@ -40,14 +50,14 @@ Built with ASP.NET Core, Angular 21, and Playwright.
 - **Scraper** — Reusable Playwright-based scraping library
 - **Notifiers** — Pushover and Discord notification implementations
 
-## Prerequisites
+## Quick Start
+
+### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 24+](https://nodejs.org/) and npm
 - [Docker](https://www.docker.com/) and Docker Compose
 - [Private Internet Access VPN](https://www.privateinternetaccess.com/) account (for VPN features)
-
-## Quick Start
 
 ### Using Docker (Recommended)
 
@@ -74,131 +84,13 @@ Built with ASP.NET Core, Angular 21, and Playwright.
 
 ### Local Development
 
-Two VS Code launch configurations are available for local development:
+Two VS Code launch configurations are available: **Launch App with Containers** (uses Browserless + VPN Docker containers) and **Launch App and Playwright** (fully local, no Docker required). Both will start the Angular dev server and open the app in Chrome automatically.
 
-- **Launch App with Containers** — Automatically starts the Browserless and VPN Docker containers, then launches the backend. Use this when developing against containerized browser services. Set the following in your `.env` file to point at the locally running containers:
-  ```
-  BROWSERLESS_URL=ws://localhost:3000
-  BROWSERLESS_URL_VPN=ws://localhost:3001
-  ```
-- **Launch App and Playwright** — Starts a local Playwright server alongside the backend. Use this for a fully local setup without Docker.
-
-Both configurations will launch the Angular dev server and open the app in Chrome automatically.
-
-#### Connecting to the VPN Container Locally
-
-When debugging locally with the **Launch App with Containers** configuration, connections to the VPN-routed Browserless instance (`localhost:3001`) will fail with a `ECONNRESET` error by default. This happens because the `thrnz/docker-wireguard-pia` container's firewall drops all inbound traffic that doesn't originate from a whitelisted network.
-
-To fix this, set `LOCAL_NETWORK` in your `.env` file to the CIDR of the network your host traffic appears to come from **inside the container**. This varies by platform:
-
-| Platform                 | Typical value                                   | Why                                                   |
-| ------------------------ | ----------------------------------------------- | ----------------------------------------------------- |
-| macOS (Docker Desktop)   | `192.168.65.0/24`                               | Traffic is proxied through the Docker VM gateway      |
-| Windows (Docker Desktop) | `192.168.65.0/24`                               | Same VM-based architecture as macOS                   |
-| Linux (native Docker)    | The Compose bridge subnet, e.g. `172.19.0.0/16` | No VM; traffic comes from the Docker network directly |
-
-To determine the exact value for your machine:
-
-- **Docker Desktop (macOS/Windows):** Open **Docker Desktop → Settings → Resources → Network** and note the Docker subnet, or run:
-  ```bash
-  docker run --rm alpine sh -c "getent hosts host.docker.internal" | awk '{print $1}'
-  ```
-  Use the `/24` subnet of the returned IP (e.g. `192.168.65.254` → `192.168.65.0/24`).
-
-- **Linux (native Docker):** Check the Compose network subnet:
-  ```bash
-  docker network inspect $(docker network ls --filter name=site-checker -q) --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
-  ```
-
-Add the value to your `.env`:
-```
-LOCAL_NETWORK=192.168.65.0/24
-```
-
-Then recreate the VPN container to apply:
-```bash
-docker compose up -d --force-recreate vpn
-```
-
-#### Backend (manual)
-
-```bash
-# Build the solution
-dotnet build
-
-# Run the backend (requires Docker services or local Playwright running)
-cd src/Backend
-dotnet run
-```
-
-#### Frontend (manual)
-
-```bash
-cd src/Frontend
-
-# Install dependencies
-npm install
-
-# Run development server
-npm start
-```
+See [docs/local-development.md](docs/local-development.md) for full setup instructions, manual backend/frontend steps, and VPN container networking troubleshooting.
 
 ## Configuration
 
-Configuration is managed through `appsettings.json`, `.env` files, and Docker environment variables.
-
-### Environment Variables
-
-| Variable                      | Required | Description                                                                               |
-| ----------------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `BROWSERLESS_TOKEN`           | Yes      | Authentication token for Browserless (any value works when self-hosting)                  |
-| `PIA_USERNAME`                | Yes      | Private Internet Access VPN username                                                      |
-| `PIA_PASSWORD`                | Yes      | Private Internet Access VPN password                                                      |
-| `BROWSERLESS_URL`             | Docker   | WebSocket URL for the standard Browserless instance                                       |
-| `BROWSERLESS_URL_VPN`         | Docker   | WebSocket URL for the VPN-routed Browserless instance                                     |
-| `VPN_CHANGE_INTERVAL`         | No       | How often to rotate the VPN location in minutes (default: 10) — helps avoid bot detection |
-| `PUSHOVER_TOKEN`              | No       | Pushover app token for notifications                                                      |
-| `PUSHOVER_USER`               | No       | Pushover user key                                                                         |
-| `DISCORD_TOKEN`               | No       | Discord bot token for notifications                                                       |
-| `HEALTHCHECKS_URL`            | No       | Healthchecks.io ping URL for uptime monitoring                                            |
-| `OpenTelemetry__OtlpEndpoint` | No       | OpenTelemetry collector endpoint                                                          |
-
-`BROWSERLESS_URL` and `BROWSERLESS_URL_VPN` are set automatically when running via Docker Compose. They only need to be specified for local development.
-
-## Docker Services
-
-| Service         | Container                    | Port      | Description                       |
-| --------------- | ---------------------------- | --------- | --------------------------------- |
-| app             | site-checker                 | 8080      | Backend API + Angular frontend    |
-| browserless     | site-checker-browserless     | 3000      | Standard headless Chrome instance |
-| browserless-vpn | site-checker-browserless-vpn | (see vpn) | VPN-routed headless Chrome        |
-| vpn             | site-checker-vpn             | 3001      | WireGuard VPN client (PIA)        |
-
-```bash
-# Start all services
-docker compose up
-
-# Rebuild and start
-docker compose up --build
-
-# Stop all services
-docker compose down
-```
-
-## Database
-
-The application uses **SQLite** with Entity Framework Core. Migrations run automatically on startup.
-
-```bash
-# Create a new migration (run from src/Database/)
-cd src/Database
-dotnet tool run dotnet-ef migrations add MigrationName
-
-# Apply migrations manually
-dotnet tool run dotnet-ef database update
-```
-
-Database files are stored in `site-checker/data/` and mounted as a Docker volume.
+Configuration is managed through `appsettings.json`, `.env` files, and Docker environment variables. See [docs/configuration.md](docs/configuration.md) for the full environment variables reference and Docker services table.
 
 ## Development
 
@@ -236,14 +128,12 @@ public class ExampleScraper(ILogger<ExampleScraper> logger)
 ## Technology Stack
 
 ### Backend
-- .NET 10 / C# 14
+- .NET 10 / C# 14 (uses first-class [extension members](https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14#extension-members) over the traditional `static class` pattern)
 - ASP.NET Core
 - Entity Framework Core + SQLite
 - OpenTelemetry
-
-> The backend uses the C# 14 [extension members](https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14#extension-members) feature, which replaces the traditional `static class` extension method pattern with a first-class `extension` block syntax.
-
-> Discord notifications use [NetCord](https://github.com/NetCord/NetCord), currently in pre-release (`1.0.0-alpha`). The library is stable in practice but the version number reflects its pre-1.0 API status.
+- [Reinforced.Typings](https://github.com/reinforced/Reinforced.Typings) — generates TypeScript interfaces and Zod schemas from C# models at build time
+- [NetCord](https://github.com/NetCord/NetCord) for Discord notifications (pre-release `1.0.0-alpha`, stable in practice)
 
 ### Frontend
 - Angular 21
@@ -256,6 +146,10 @@ public class ExampleScraper(ILogger<ExampleScraper> logger)
 - Docker & Docker Compose
 - Playwright + Browserless Chrome
 - WireGuard VPN (PIA)
+
+## What's Next
+- Add a no-code scraper builder — define CSS selectors, wait conditions, and interactions (clicks, scrolls) directly in the dashboard without writing a custom scraper class for less complicated checks
+- Add support for prompt-based AI-powered web scraping using services like ChatGPT, Claude, or Ollama
 
 ## Acknowledgments
 
