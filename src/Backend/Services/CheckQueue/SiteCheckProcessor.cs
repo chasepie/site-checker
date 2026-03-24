@@ -8,16 +8,44 @@ using SiteChecker.Scraper;
 
 namespace SiteChecker.Backend.Services.CheckQueue;
 
+/// <summary>
+/// Background service that dequeues pending checks, executes scrapes, and persists results.
+/// </summary>
 public class SiteCheckQueueProcessor : BackgroundService
 {
-    private readonly Stopwatch _stopwatch = new();
+    /// <summary>
+    /// Tracks elapsed time since the last VPN region change.
+    /// </summary>
+    private readonly Stopwatch _vpnStopwatch = new();
+
+    /// <summary>
+    /// Interval in minutes between VPN region changes.
+    /// </summary>
     private readonly int _vpnChangeInterval;
 
-    private readonly IConfiguration _config;
+    /// <summary>
+    /// Queue service for pending site checks.
+    /// </summary>
     private readonly ISiteCheckQueueService _siteCheckQueue;
+
+    /// <summary>
+    /// Logger.
+    /// </summary>
     private readonly ILogger<SiteCheckQueueProcessor> _logger;
+
+    /// <summary>
+    /// Scope factory for resolving scoped services.
+    /// </summary>
     private readonly IServiceScopeFactory _scopeFactory;
+
+    /// <summary>
+    /// Scraper service.
+    /// </summary>
     private readonly IScraperService _scraperService;
+
+    /// <summary>
+    /// PIA VPN service.
+    /// </summary>
     private readonly PiaService _piaService;
 
     public SiteCheckQueueProcessor(
@@ -28,27 +56,34 @@ public class SiteCheckQueueProcessor : BackgroundService
         IScraperService scraperService,
         PiaService piaService)
     {
-        _config = configuration;
         _siteCheckQueue = siteCheckQueue;
         _logger = logger;
         _scopeFactory = scopeFactory;
         _scraperService = scraperService;
         _piaService = piaService;
 
-        if (!int.TryParse(_config["VPN_CHANGE_INTERVAL"], out var parsedInterval))
+        if (!int.TryParse(configuration["VPN_CHANGE_INTERVAL"], out var parsedInterval))
         {
             parsedInterval = 15;
         }
         _vpnChangeInterval = parsedInterval;
     }
 
+    /// <summary>
+    /// Processes queued checks until the service is stopped.
+    /// </summary>
+    /// <param name="stoppingToken">Token to monitor for cancellation requests.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _stopwatch.Start();
+        _vpnStopwatch.Start();
+
         while (!stoppingToken.IsCancellationRequested)
         {
             var siteCheckId = await _siteCheckQueue.DequeueAsync(stoppingToken);
 
+            // A new scope per check ensures each check gets a fresh DbContext with an isolated
+            // change tracker, preventing stale entity state from one check affecting the next.
             await using var scope = _scopeFactory.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
             var siteCheck = await dbContext.SiteChecks
@@ -67,13 +102,19 @@ public class SiteCheckQueueProcessor : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error occurred executing {CheckName}.", siteCheck.Site.Name);
-
                 siteCheck.Update(ex);
                 await dbContext.SaveChangesAsync(stoppingToken);
             }
         }
     }
 
+    /// <summary>
+    /// Performs a site check using the scraper service and updates the database with the results.
+    /// </summary>
+    /// <param name="siteCheck">The site check to perform.</param>
+    /// <param name="dbContext">The database context.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task PerformCheckAsync(
         SiteCheck siteCheck,
         SiteCheckerDbContext dbContext,
@@ -81,6 +122,10 @@ public class SiteCheckQueueProcessor : BackgroundService
     {
         siteCheck.Status = CheckStatus.Checking;
         siteCheck.VpnLocationId = await GetVpnLocationAsync(siteCheck, cancellationToken);
+
+        // Save before scraping so clients receive a real-time status update via SignalR while the
+        // (potentially long-running) scrape is in progress. An EF Core SaveChanges interceptor
+        // hooks into every save and automatically broadcasts entity changes to all connected clients.
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var request = new ScrapeRequest
@@ -103,6 +148,14 @@ public class SiteCheckQueueProcessor : BackgroundService
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Resolves the location label used for the current check based on browser mode. If using a
+    /// VPN, may change the region if the configured interval has elapsed.
+    /// </summary>
+    /// <param name="siteCheck">The site check for which to determine the VPN location.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>The name of the VPN location to use.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if an unsupported browser type is encountered.</exception>
     private async Task<string> GetVpnLocationAsync(SiteCheck siteCheck, CancellationToken cancellationToken)
     {
         var browserType = _scraperService.GetBrowserType(siteCheck.Site.UseVpn);
@@ -118,7 +171,7 @@ public class SiteCheckQueueProcessor : BackgroundService
 
         if (browserType == BrowserType.BrowserlessVpn)
         {
-            var location = _stopwatch.Elapsed.TotalMinutes >= _vpnChangeInterval
+            var location = _vpnStopwatch.Elapsed.TotalMinutes >= _vpnChangeInterval
                 ? await ChangeVpnRegionAsync(false, cancellationToken)
                 : await _piaService.GetCurrentLocationAsync(cancellationToken);
             return location.Name;
@@ -127,9 +180,15 @@ public class SiteCheckQueueProcessor : BackgroundService
         throw new InvalidOperationException($"Unsupported browser type: {browserType}");
     }
 
+    /// <summary>
+    /// Changes the VPN region and returns the selected location.
+    /// </summary>
+    /// <param name="excludeCurrent">Whether to exclude the current VPN location when selecting the next location.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>The new VPN location.</returns>
     private async Task<PiaLocation> ChangeVpnRegionAsync(bool excludeCurrent, CancellationToken cancellationToken)
     {
-        _stopwatch.Restart();
+        _vpnStopwatch.Restart();
 
         var newLocation = await _piaService.ChangeLocationAsync(excludeCurrent, cancellationToken);
         _logger.LogInformation("VPN region changed to {Region}.", newLocation.Name);

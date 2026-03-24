@@ -1,8 +1,5 @@
-import { computed, Directive, input, Signal } from '@angular/core';
-import {
-  createMetadataKey, FieldTree, metadata,
-  SchemaPathTree
-} from '@angular/forms/signals';
+import { computed, Directive, inject, Signal } from '@angular/core';
+import { createMetadataKey, FormField, metadata, SchemaPathTree } from '@angular/forms/signals';
 
 const VALIDATED = createMetadataKey<boolean>();
 
@@ -13,10 +10,10 @@ const VALIDATED = createMetadataKey<boolean>();
     '[class.is-valid]': 'this._isValidated() && this._fieldState().valid()',
   }
 })
-export class FormValid<T, U extends string | number> {
-  public readonly formField = input.required<FieldTree<T, U>>();
+export class FormValid {
+  private readonly _formField = inject(FormField).field;
 
-  protected readonly _fieldState = computed(() => this.formField()());
+  protected readonly _fieldState = computed(() => this._formField()());
 
   protected readonly _isValidated = computed(() => {
     const metaIsValidated = this._fieldState().metadata(VALIDATED);
