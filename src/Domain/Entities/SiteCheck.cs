@@ -1,9 +1,12 @@
 using SiteChecker.Domain.Enums;
+using SiteChecker.Domain.Exceptions;
 
 namespace SiteChecker.Domain.Entities;
 
 public class SiteCheck : IEntityWithId
 {
+    private const string ExceptionTypeKey = "EXCEPTION_TYPE";
+
     public required int Id { get; set; }
 
     public required string? Value { get; set; }
@@ -24,6 +27,31 @@ public class SiteCheck : IEntityWithId
 
     public bool IsComplete => Status == CheckStatus.Failed || Status == CheckStatus.Done;
 
+    /// <summary>
+    /// True when the check failed due to a known/expected exception type (e.g. access denied, blank page).
+    /// Known failures do not trigger notifications.
+    /// </summary>
+    public bool IsKnownFailure
+    {
+        get
+        {
+            if (Status != CheckStatus.Failed)
+            {
+                return false;
+            }
+
+            if (Metadata.TryGetValue(ExceptionTypeKey, out var exceptionType)
+                && !string.IsNullOrEmpty(exceptionType))
+            {
+                return exceptionType.EndsWith(nameof(KnownScraperException))
+                    || exceptionType.EndsWith(nameof(AccessDeniedScraperException))
+                    || exceptionType.EndsWith(nameof(BlankPageScraperException));
+            }
+
+            return false;
+        }
+    }
+
     public SiteCheck() { }
 
     [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
@@ -32,6 +60,39 @@ public class SiteCheck : IEntityWithId
         SiteId = siteId;
         Status = CheckStatus.Created;
         StartDate = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Updates the check status and value from a scrape result.
+    /// </summary>
+    /// <param name="result">The result of the scrape operation.</param>
+    public void CompleteWithResult(IScrapeResult result)
+    {
+        if (result.IsFailure(out var failure))
+        {
+            Status = CheckStatus.Failed;
+            Value = failure.ErrorMessage;
+            if (failure.Exception != null)
+            {
+                var exceptionType = failure.Exception.GetType().FullName;
+                if (!string.IsNullOrEmpty(exceptionType))
+                {
+                    // Create a new dictionary to ensure EF Core detects the change
+                    Metadata = new(Metadata) { [ExceptionTypeKey] = exceptionType };
+                }
+            }
+        }
+        else if (result.IsSuccess(out var success))
+        {
+            Status = CheckStatus.Done;
+            Value = success.Content;
+        }
+        else
+        {
+            throw new InvalidOperationException("Unknown scrape result type");
+        }
+
+        DoneDate = DateTime.UtcNow;
     }
 
     public void Update(Exception ex)
