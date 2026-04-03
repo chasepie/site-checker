@@ -1,4 +1,4 @@
-namespace SiteChecker.Scraper.Exceptions;
+namespace SiteChecker.Domain.Exceptions;
 
 public abstract class ScraperException(string message, Exception? innerException = null)
     : Exception(message, innerException)

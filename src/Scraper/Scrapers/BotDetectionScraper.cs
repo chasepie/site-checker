@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
+using SiteChecker.Domain;
 using SiteChecker.Scraper.Extensions;
 
 namespace SiteChecker.Scraper.Scrapers;

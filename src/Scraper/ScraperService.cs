@@ -3,7 +3,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
-using SiteChecker.Scraper.Exceptions;
+using SiteChecker.Domain;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Exceptions;
+using SiteChecker.Domain.Ports;
 using SiteChecker.Scraper.Scrapers;
 
 namespace SiteChecker.Scraper;
@@ -17,7 +20,7 @@ public interface IScraperService
 public partial class ScraperService(
     IEnumerable<IScraper> scrapers,
     IConfiguration config,
-    ILogger<ScraperService> logger) : IScraperService
+    ILogger<ScraperService> logger) : IScraperService, IScrapingService
 {
     public const string BrowserlessUrlKey = "BROWSERLESS_URL";
     public const string BrowserlessUrlVpnKey = "BROWSERLESS_URL_VPN";
@@ -145,6 +148,18 @@ public partial class ScraperService(
         }
 
         return BrowserType.Local;
+    }
+
+    public Task<IScrapeResult> ScrapeAsync(Site site, SiteCheck siteCheck, CancellationToken cancellationToken = default)
+    {
+        var request = new ScrapeRequest
+        {
+            Id = siteCheck.Id,
+            ScraperId = site.ScraperId,
+            BrowserType = GetBrowserType(site.UseVpn),
+            AlwaysTakeScreenshot = site.AlwaysTakeScreenshot,
+        };
+        return ScrapeContentAsync(request);
     }
 }
 

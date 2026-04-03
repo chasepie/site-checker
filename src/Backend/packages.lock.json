@@ -652,6 +652,7 @@
       "scraper": {
         "type": "Project",
         "dependencies": {
+          "Domain": "[1.0.0, )",
           "Microsoft.Playwright": "[1.58.0, )",
           "Utilities": "[1.0.0, )"
         }

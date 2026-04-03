@@ -5,7 +5,7 @@ using SiteChecker.Database;
 using SiteChecker.Database.Extensions;
 using SiteChecker.Domain.DTOs;
 using SiteChecker.Domain.Entities;
-using SiteChecker.Scraper;
+using SiteChecker.Domain;
 
 namespace SiteChecker.Backend.Controllers;
 

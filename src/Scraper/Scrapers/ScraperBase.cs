@@ -2,7 +2,8 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
-using SiteChecker.Scraper.Exceptions;
+using SiteChecker.Domain;
+using SiteChecker.Domain.Exceptions;
 using SiteChecker.Scraper.Extensions;
 using SiteChecker.Utilities;
 

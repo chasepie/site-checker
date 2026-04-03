@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
+using SiteChecker.Domain;
 
 namespace SiteChecker.Scraper.Scrapers;
 

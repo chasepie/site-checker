@@ -2,8 +2,8 @@ using NetCord.Rest;
 using SiteChecker.Backend.Notifiers.Pushover;
 using SiteChecker.Domain.Entities;
 using SiteChecker.Domain.Enums;
-using SiteChecker.Scraper;
-using SiteChecker.Scraper.Exceptions;
+using SiteChecker.Domain;
+using SiteChecker.Domain.Exceptions;
 
 namespace SiteChecker.Backend.Extensions;
 
