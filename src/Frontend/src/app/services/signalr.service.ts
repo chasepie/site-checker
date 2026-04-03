@@ -2,12 +2,8 @@ import { Injectable } from '@angular/core';
 import { HubConnectionBuilder } from '@microsoft/signalr';
 import { Observable } from 'rxjs';
 import { ZodType } from 'zod';
-import {
-  CreatedEntityChange, DeletedEntityChange,
-  PiaLocation,
-  SignalRConstants,
-  UpdatedEntityChange
-} from '../generated/model';
+import { SignalRConstants, VpnLocation } from '../generated/model';
+import { CreatedEntityChange, DeletedEntityChange, UpdatedEntityChange } from '../generated/signalr-types';
 
 @Injectable({
   providedIn: 'root'
@@ -37,7 +33,7 @@ export class SignalrService {
   public readonly entityAdded$ = this.getObservable(CreatedEntityChange, SignalRConstants.OnEntityCreatedKey);
   public readonly entityUpdated$ = this.getObservable(UpdatedEntityChange, SignalRConstants.OnEntityUpdatedKey);
   public readonly entityDeleted$ = this.getObservable(DeletedEntityChange, SignalRConstants.OnEntityDeletedKey);
-  public readonly locationChanged$ = this.getObservable(PiaLocation, SignalRConstants.OnLocationChangedKey);
+  public readonly locationChanged$ = this.getObservable(VpnLocation, SignalRConstants.OnLocationChangedKey);
 
   public get connectionId() {
     return this._connection.connectionId;

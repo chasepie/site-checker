@@ -1,7 +1,7 @@
 import { computed, inject } from '@angular/core';
 import {
-  patchState, signalStore, withComputed, withHooks,
-  withMethods, withProps, withState
+    patchState, signalStore, withComputed, withHooks,
+    withMethods, withProps, withState
 } from '@ngrx/signals';
 import { Site, SiteController, SiteUpdate } from '../generated/model';
 import { withCrudEntities } from './base.store';
@@ -72,9 +72,6 @@ export const SiteStore = signalStore(
       void store._controller.getAllSites()
         .then(sites => {
           store._upsertInCache(sites);
-          for (const site of sites) {
-            store._siteCheckStore.upsertFromSite(site);
-          }
         });
     }
   })),

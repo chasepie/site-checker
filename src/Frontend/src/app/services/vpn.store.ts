@@ -1,20 +1,27 @@
 import { inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
-  patchState, signalStore, withHooks,
-  withMethods, withProps, withState
+    patchState, signalStore, withHooks,
+    withMethods, withProps, withState
 } from '@ngrx/signals';
 import { updateEntity, upsertEntities, withEntities } from '@ngrx/signals/entities';
 import { tap } from 'rxjs';
-import { PiaLocation, VpnController } from '../generated/model';
+import { VpnController, VpnLocation } from '../generated/model';
 import { SignalrService } from './signalr.service';
+
+// Extends VpnLocation with client-side-only excluded tracking (not from API)
+export type VpnLocationEntry = VpnLocation & { excluded: boolean };
+
+function toEntry(location: VpnLocation): VpnLocationEntry {
+  return { ...location, excluded: false };
+}
 
 export const VpnStore = signalStore(
   { providedIn: 'root' },
-  withEntities<PiaLocation>(),
+  withEntities<VpnLocationEntry>(),
 
   withState({
-    currentLocation: null as PiaLocation | null,
+    currentLocation: null as VpnLocation | null,
   }),
 
   withProps(() => ({
@@ -23,15 +30,15 @@ export const VpnStore = signalStore(
   })),
 
   withMethods(store => ({
-    _updateCurrentLocation(location: PiaLocation) {
+    _updateCurrentLocation(location: VpnLocation) {
       patchState(store, () => ({
         currentLocation: location,
       }));
     },
 
-    _upsertLocations(locations: PiaLocation | PiaLocation[]) {
-      const entities = Array.isArray(locations) ? locations : [locations];
-      patchState(store, upsertEntities(entities));
+    _upsertLocations(locations: VpnLocation | VpnLocation[]) {
+      const entries = Array.isArray(locations) ? locations.map(toEntry) : [toEntry(locations)];
+      patchState(store, upsertEntities(entries));
     },
 
     _excludeLocation(id: string) {

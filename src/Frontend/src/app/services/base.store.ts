@@ -2,14 +2,15 @@ import { inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { patchState, signalStoreFeature, withHooks, withMethods, withProps } from '@ngrx/signals';
 import {
-  addEntities,
-  removeEntities,
-  updateEntity, upsertEntity,
-  withEntities
+    addEntities,
+    removeEntities,
+    updateEntity, upsertEntity,
+    withEntities
 } from '@ngrx/signals/entities';
 import { filter, map, Observable } from 'rxjs';
 import { ZodType } from 'zod';
-import { CreatedEntityChange, DeletedEntityChange, EntityChange, IEntityWithId, UpdatedEntityChange } from '../generated/model';
+import { IEntityWithId } from '../generated/model';
+import { CreatedEntityChange, DeletedEntityChange, EntityChange, UpdatedEntityChange } from '../generated/signalr-types';
 import { PartialEntityWithId } from '../utilities/type-utils';
 import { SignalrService } from './signalr.service';
 

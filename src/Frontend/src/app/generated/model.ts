@@ -40,9 +40,9 @@ export const SiteUpdate = z.object({
 	useVpn: z.boolean(),
 	alwaysTakeScreenshot: z.boolean(),
 	knownFailuresThreshold: z.number(),
-	schedule: SiteSchedule,
-	pushoverConfig: PushoverConfig,
-	discordConfig: DiscordConfig,
+	schedule: z.lazy(() => SiteSchedule),
+	pushoverConfig: z.lazy(() => PushoverConfig),
+	discordConfig: z.lazy(() => DiscordConfig),
 });
 export type SiteUpdate = z.infer<typeof SiteUpdate>;
 
@@ -60,8 +60,8 @@ export const DiscordConfig = z.object({
 export type DiscordConfig = z.infer<typeof DiscordConfig>;
 
 export const PushoverConfig = z.object({
-	successPriority: PushoverPriority.nullable(),
-	failurePriority: PushoverPriority.nullable(),
+	successPriority: z.lazy(() => PushoverPriority).nullable(),
+	failurePriority: z.lazy(() => PushoverPriority).nullable(),
 });
 export type PushoverConfig = z.infer<typeof PushoverConfig>;
 
@@ -81,7 +81,7 @@ export type IEntityWithId = z.infer<typeof IEntityWithId>;
 export const SiteCheck = IEntityWithId.extend({
 	value: z.string().nullable(),
 	vpnLocationId: z.string().nullable(),
-	status: CheckStatus,
+	status: z.lazy(() => CheckStatus),
 	startDate: z.string(),
 	doneDate: z.string().nullable(),
 	siteId: z.number(),
@@ -98,9 +98,9 @@ export const Site = IEntityWithId.extend({
 	useVpn: z.boolean(),
 	alwaysTakeScreenshot: z.boolean(),
 	knownFailuresThreshold: z.number(),
-	schedule: SiteSchedule,
-	pushoverConfig: PushoverConfig,
-	discordConfig: DiscordConfig,
+	schedule: z.lazy(() => SiteSchedule),
+	pushoverConfig: z.lazy(() => PushoverConfig),
+	discordConfig: z.lazy(() => DiscordConfig),
 	scraperId: z.string(),
 });
 export type Site = z.infer<typeof Site>;

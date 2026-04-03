@@ -168,11 +168,6 @@ export const SiteCheckStore = signalStore(
       store._upsertInCache([newSiteCheck]);
     },
 
-    upsertFromSite: (site: Site) => {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      store._upsertInCache(site.siteChecks ?? []);
-    },
-
     loadSiteChecks: (filter: SiteCheckFilter) => {
       patchState(store, state => ({
         _getAllFilter: {

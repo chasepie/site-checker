@@ -44,11 +44,9 @@
     <SpaProxyServerUrl>https://localhost:50064</SpaProxyServerUrl>
   </PropertyGroup>
 
-  <!-- Temporarily disabled while frontend types are updated for Step 2 domain changes
   <Target Name="BuildFrontend" AfterTargets="Build">
     <Exec WorkingDirectory="$(SpaRoot)" Command="dotnet build -c $(Configuration) -p:ShouldRunBuildScript=true" />
   </Target>
-  -->
 
   <ItemGroup Condition="Exists('$(SolutionDir).env')">
     <None Include="$(SolutionDir).env">

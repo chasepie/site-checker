@@ -102,7 +102,7 @@ public class ZodGenerator : ClassAndInterfaceGeneratorBase<RtRaw>
             var typeName = type.GetTypeName();
             if (!string.IsNullOrEmpty(typeName))
             {
-                return typeName;
+                return $"z.lazy(() => {typeName})";
             }
         }
 

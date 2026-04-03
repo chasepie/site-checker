@@ -2,8 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
 import { AgGridAngular } from 'ag-grid-angular';
 import { ClientSideRowModelModule, ColumnAutoSizeModule, GridOptions, ModuleRegistry, ValidationModule } from 'ag-grid-community';
-import { PiaLocation } from '../../generated/model';
-import { VpnStore } from '../../services/vpn.store';
+import { VpnLocationEntry, VpnStore } from '../../services/vpn.store';
 
 // Register all Community features
 ModuleRegistry.registerModules([
@@ -23,7 +22,7 @@ export class Vpn {
   private readonly _vpnStore = inject(VpnStore);
   protected readonly rowData = this._vpnStore.entities;
 
-  protected readonly gridOptions: GridOptions<PiaLocation> = {
+  protected readonly gridOptions: GridOptions<VpnLocationEntry> = {
     columnDefs: [
       {
         field: 'name',
