@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Reinforced.Typings.Ast.TypeNames;
 using Reinforced.Typings.Fluent;
-using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Domain.DTOs;
 using SiteChecker.Domain.Entities;
 using SiteChecker.Domain.Enums;
@@ -57,7 +56,7 @@ public static partial class ReinforcedTypingsConfiguration
         var dbClasses = new List<Type>
         {
             typeof(PagedResponse<>),
-            typeof(PiaLocation),
+            typeof(VpnLocation),
             typeof(DiscordConfig),
             typeof(IEntityWithId),
             typeof(PushoverConfig),

@@ -46,13 +46,11 @@ export const SiteUpdate = z.object({
 });
 export type SiteUpdate = z.infer<typeof SiteUpdate>;
 
-export const PiaLocation = z.object({
-	name: z.string(),
+export const VpnLocation = z.object({
 	id: z.string(),
-	portForward: z.boolean(),
-	excluded: z.boolean(),
+	name: z.string(),
 });
-export type PiaLocation = z.infer<typeof PiaLocation>;
+export type VpnLocation = z.infer<typeof VpnLocation>;
 
 export const DiscordConfig = z.object({
 	successEnabled: z.boolean(),
@@ -265,7 +263,7 @@ export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 			}
 		);
 		const result = await lastValueFrom(obs$);
-		return any.parse(result);
+		return VpnLocation.parse(result);
 	}
 	public async getCurrentLocation() 
 	{
@@ -278,7 +276,7 @@ export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 			}
 		);
 		const result = await lastValueFrom(obs$);
-		return any.parse(result);
+		return VpnLocation.parse(result);
 	}
 	public async getAllLocations() 
 	{
@@ -291,7 +289,7 @@ export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 			}
 		);
 		const result = await lastValueFrom(obs$);
-		return any.array().parse(result);
+		return VpnLocation.array().parse(result);
 	}
 }
 export const SignalRConstants = {

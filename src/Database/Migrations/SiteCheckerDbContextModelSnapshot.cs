@@ -16,7 +16,7 @@ namespace SiteChecker.Database.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.1");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.5");
 
             modelBuilder.Entity("SiteChecker.Database.Model.Site", b =>
                 {
@@ -57,7 +57,9 @@ namespace SiteChecker.Database.Migrations
 
                             b1.Property<bool>("SuccessEnabled");
 
-                            b1.ToJson("DiscordConfig");
+                            b1
+                                .ToJson("DiscordConfig")
+                                .HasColumnType("TEXT");
                         });
 
                     b.ComplexProperty(typeof(Dictionary<string, object>), "PushoverConfig", "SiteChecker.Database.Model.Site.PushoverConfig#PushoverConfig", b1 =>
@@ -68,7 +70,9 @@ namespace SiteChecker.Database.Migrations
 
                             b1.Property<int?>("SuccessPriority");
 
-                            b1.ToJson("PushoverConfig");
+                            b1
+                                .ToJson("PushoverConfig")
+                                .HasColumnType("TEXT");
                         });
 
                     b.ComplexProperty(typeof(Dictionary<string, object>), "Schedule", "SiteChecker.Database.Model.Site.Schedule#SiteSchedule", b1 =>
@@ -83,7 +87,9 @@ namespace SiteChecker.Database.Migrations
 
                             b1.Property<TimeOnly?>("Start");
 
-                            b1.ToJson("Schedule");
+                            b1
+                                .ToJson("Schedule")
+                                .HasColumnType("TEXT");
                         });
 
                     b.HasKey("Id");
@@ -91,7 +97,7 @@ namespace SiteChecker.Database.Migrations
                     b.HasIndex("ScraperId")
                         .IsUnique();
 
-                    b.ToTable("Sites");
+                    b.ToTable("Sites", (string)null);
                 });
 
             modelBuilder.Entity("SiteChecker.Database.Model.SiteCheck", b =>
@@ -126,7 +132,7 @@ namespace SiteChecker.Database.Migrations
 
                     b.HasIndex("SiteId");
 
-                    b.ToTable("SiteChecks");
+                    b.ToTable("SiteChecks", (string)null);
                 });
 
             modelBuilder.Entity("SiteChecker.Database.Model.SiteCheckScreenshot", b =>
@@ -147,7 +153,7 @@ namespace SiteChecker.Database.Migrations
                     b.HasIndex("SiteCheckId")
                         .IsUnique();
 
-                    b.ToTable("SiteCheckScreenshots");
+                    b.ToTable("SiteCheckScreenshots", (string)null);
                 });
 
             modelBuilder.Entity("SiteChecker.Database.Model.SiteCheck", b =>
