@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- RT0002: Domain is intentionally empty until Step 2; reference will be used then -->
+    <NoWarn>$(NoWarn);RT0002</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Domain/Domain.csproj" />
+  </ItemGroup>
+
+</Project>

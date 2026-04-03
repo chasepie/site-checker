@@ -1,7 +1,0 @@
-﻿<Project Sdk="MSTest.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Utilities\Utilities.csproj" />
-  </ItemGroup>
-
-</Project>

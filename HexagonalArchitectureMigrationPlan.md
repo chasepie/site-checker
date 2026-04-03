@@ -106,7 +106,7 @@ Application  (depends only on Domain — use cases that orchestrate domain + por
 - `IScraper` interface stays internal to Scraper project (takes Playwright `IPage`)
 - `BrowserType` enum stays in Scraper (infrastructure detail)
 - `ScrapeRequest` stays in Scraper; Domain's `IScrapingService` takes domain-level parameters
-- Update test imports in `test/Scraper.Test/`
+- Recreate `test/Scraper.Test/` with updated imports for moved exception/result types
 
 **Verify:** `dotnet build`, `dotnet test`, trigger a check and confirm scraping works.
 

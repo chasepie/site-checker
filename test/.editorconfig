@@ -1,3 +1,0 @@
-[*.{cs,vb}]
-# Ok for test projects to have underscores in test method names
-dotnet_diagnostic.CA1707.severity = none
