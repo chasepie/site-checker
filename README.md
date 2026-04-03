@@ -24,44 +24,34 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 
 ## Architecture
 
-The project follows a **hexagonal architecture** (ports and adapters) pattern, keeping the domain model free of infrastructure concerns. Dependency flow is strictly inward — outer layers depend on inner layers, never the reverse.
+The project follows a **hexagonal architecture** (ports and adapters) pattern, keeping the domain model free of infrastructure concerns. Dependency flow is strictly inward — outer layers depend on inner layers, never the reverse. See [docs/architecture.md](docs/architecture.md) for an interactive Mermaid diagram.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (Angular 21)                │
-│                  SPA for monitoring & management        │
-└──────────────────────┬──────────────────────────────────┘
-                       │ HTTP/SignalR
-┌──────────────────────▼──────────────────────────────────┐
-│              Backend (ASP.NET Core)                     │
-│  Controllers, DI wiring, domain event handlers          │
-└─┬──────────────────────┬──────────────────────────────┬─┘
-  │                      │                              │
-  ▼                      ▼                              ▼
-┌────────────┐  ┌──────────────────┐   ┌──────────────────────┐
-│  Database  │  │     Scraper      │   │   Browserless        │
-│EF Core +   │  │Playwright-based  │   │Standard & VPN-routed │
-│  SQLite    │  │scraping library  │   └──────────────────────┘
-└──────┬─────┘  └────────┬─────────┘
-       │                 │
-       │   ┌─────────────▼────────────┐
-       └──►│  Application (Use Cases) │
-           │PerformSiteCheck,Schedule,│
-           │  Notify, ManageSites     │
-           └─────────────┬────────────┘
-                         │
-           ┌─────────────▼────────────┐
-           │         Domain           │
-           │ Entities, Value Objects, │
-           │   Ports (interfaces),    │
-           │  Domain Events, no deps  │
-           └──────────────────────────┘
+                    Frontend (Angular 21)
+                            │ HTTP / SignalR
+╔═══════════════════════════╪═══════════════════════════════╗
+║  Outer Ring — Adapters    ▼                               ║
+║  Backend · Database · Scraper · Notifiers · VPN           ║
+║  (implement domain ports via dependency inversion)        ║
+║                           │                               ║
+║   ╔═══════════════════════╪═══════════════════════════╗   ║
+║   ║  Middle Ring — Application                        ║   ║
+║   ║  PerformSiteCheck · ScheduleSiteChecks            ║   ║
+║   ║  NotifyCheck · ManageSites · CreateSiteCheck      ║   ║
+║   ║                       │                           ║   ║
+║   ║   ╔═══════════════════╪═══════════════════════╗   ║   ║
+║   ║   ║  Inner Ring — Domain (zero dependencies)  ║   ║   ║
+║   ║   ║  Entities · Value Objects                 ║   ║   ║
+║   ║   ║  Ports · Domain Events                    ║   ║   ║
+║   ║   ╚═══════════════════════════════════════════╝   ║   ║
+║   ╚═══════════════════════════════════════════════════╝   ║
+╚═══════════════════════════════════════════════════════════╝
 ```
 
 ### Layers
 
 - **Domain** (`src/Domain/`) — Zero-dependency core: entities (`Site`, `SiteCheck`), value objects (`SiteSchedule`, `VpnLocation`), port interfaces (`ISiteRepository`, `IScrapingService`, etc.), and domain events. No NuGet or project references beyond the BCL.
-- **Application** (`src/Application/`) — Orchestrates use cases (`PerformSiteCheckUseCase`, `ScheduleSiteChecksUseCase`, `NotifyCheckCompletedUseCase`, `ManageSitesUseCase`). References only Domain; no infrastructure dependencies.
+- **Application** (`src/Application/`) — Orchestrates use cases (`PerformSiteCheckUseCase`, `ScheduleSiteChecksUseCase`, `NotifyCheckCompletedUseCase`, `ManageSitesUseCase`, `CreateSiteCheckUseCase`). References only Domain; no infrastructure dependencies.
 - **Database** (`src/Database/`) — EF Core 10 + SQLite adapter; implements repository ports defined in Domain. Fluent API for relationships and JSON complex properties.
 - **Scraper** (`src/Scraper/`) — Playwright-based browser automation library. Implements `IScrapingService` (domain port). `ScrapeRequest` and `BrowserType` stay here as infrastructure details.
 - **Backend** (`src/Backend/`) — ASP.NET Core host: controllers, DI wiring, background services (`SiteCheckTimer`, `SiteCheckQueueProcessor`), domain event handlers, SignalR hub, VPN service adapter.
