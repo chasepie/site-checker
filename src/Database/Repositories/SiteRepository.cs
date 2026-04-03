@@ -1,10 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Events;
 using SiteChecker.Domain.Ports;
 
 namespace SiteChecker.Database.Repositories;
 
-public class SiteRepository(SiteCheckerDbContext dbContext) : ISiteRepository
+public class SiteRepository(SiteCheckerDbContext dbContext, IDomainEventDispatcher dispatcher) : ISiteRepository
 {
     public async Task<Site?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
         => await dbContext.Sites.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
@@ -33,17 +34,27 @@ public class SiteRepository(SiteCheckerDbContext dbContext) : ISiteRepository
     {
         dbContext.Sites.Add(site);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await dispatcher.DispatchAsync(new EntityCreatedEvent<Site>(site), cancellationToken);
     }
 
     public async Task UpdateAsync(Site site, CancellationToken cancellationToken = default)
     {
+        var old = await dbContext.Sites.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == site.Id, cancellationToken);
+
         dbContext.Sites.Update(site);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (old != null)
+        {
+            await dispatcher.DispatchAsync(new EntityUpdatedEvent<Site>(old, site), cancellationToken);
+        }
     }
 
     public async Task RemoveAsync(Site site, CancellationToken cancellationToken = default)
     {
         dbContext.Sites.Remove(site);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await dispatcher.DispatchAsync(new EntityDeletedEvent<Site>(site), cancellationToken);
     }
 }

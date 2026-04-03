@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using Reinforced.Typings.Ast.TypeNames;
 using Reinforced.Typings.Fluent;
 using SiteChecker.Backend.Services.VPN;
-using SiteChecker.Database.Services;
 using SiteChecker.Domain.DTOs;
 using SiteChecker.Domain.Entities;
 using SiteChecker.Domain.Enums;
@@ -58,11 +57,6 @@ public static partial class ReinforcedTypingsConfiguration
         var dbClasses = new List<Type>
         {
             typeof(PagedResponse<>),
-            typeof(IEntityChange),
-            typeof(EntityChange),
-            typeof(CreatedEntityChange),
-            typeof(UpdatedEntityChange),
-            typeof(DeletedEntityChange),
             typeof(PiaLocation),
             typeof(DiscordConfig),
             typeof(IEntityWithId),

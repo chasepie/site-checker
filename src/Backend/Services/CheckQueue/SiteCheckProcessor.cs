@@ -10,12 +10,12 @@ namespace SiteChecker.Backend.Services.CheckQueue;
 /// this class only handles the BackgroundService loop and scope management.
 /// </summary>
 public class SiteCheckQueueProcessor(
-    ISiteCheckQueueService siteCheckQueue,
+    ISiteCheckQueue siteCheckQueue,
     ILogger<SiteCheckQueueProcessor> logger,
     IServiceScopeFactory scopeFactory)
     : BackgroundService
 {
-    private readonly ISiteCheckQueueService _siteCheckQueue = siteCheckQueue;
+    private readonly ISiteCheckQueue _siteCheckQueue = siteCheckQueue;
     private readonly ILogger<SiteCheckQueueProcessor> _logger = logger;
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
 

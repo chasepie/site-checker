@@ -7,11 +7,13 @@ using SiteChecker.Application.UseCases;
 using SiteChecker.Backend.JsonConverters;
 using SiteChecker.Backend.Services;
 using SiteChecker.Backend.Services.CheckQueue;
+using SiteChecker.Backend.Services.DomainEvents;
 using SiteChecker.Backend.Services.SignalR;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
 using SiteChecker.Database.Repositories;
-using SiteChecker.Database.Services;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Events;
 using SiteChecker.Domain.Ports;
 using SiteChecker.Backend.Notifiers.Discord;
 using SiteChecker.Backend.Notifiers.Pushover;
@@ -88,10 +90,36 @@ public class Program
         services.AddScoped<ISiteRepository, SiteRepository>();
         services.AddScoped<ISiteCheckRepository, SiteCheckRepository>();
 
+        services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
+
+        // SignalR event handlers — broadcast entity changes to connected clients
+        services.AddScoped<SignalREventHandler<Site>>();
+        services.AddScoped<IDomainEventHandler<EntityCreatedEvent<Site>>>(sp =>
+            sp.GetRequiredService<SignalREventHandler<Site>>());
+        services.AddScoped<IDomainEventHandler<EntityUpdatedEvent<Site>>>(sp =>
+            sp.GetRequiredService<SignalREventHandler<Site>>());
+        services.AddScoped<IDomainEventHandler<EntityDeletedEvent<Site>>>(sp =>
+            sp.GetRequiredService<SignalREventHandler<Site>>());
+
+        services.AddScoped<SignalREventHandler<SiteCheck>>();
+        services.AddScoped<IDomainEventHandler<EntityCreatedEvent<SiteCheck>>>(sp =>
+            sp.GetRequiredService<SignalREventHandler<SiteCheck>>());
+        services.AddScoped<IDomainEventHandler<EntityUpdatedEvent<SiteCheck>>>(sp =>
+            sp.GetRequiredService<SignalREventHandler<SiteCheck>>());
+        services.AddScoped<IDomainEventHandler<EntityDeletedEvent<SiteCheck>>>(sp =>
+            sp.GetRequiredService<SignalREventHandler<SiteCheck>>());
+
+        // Queue handler — transitions new SiteChecks to Queued and enqueues them
+        services.AddScoped<IDomainEventHandler<EntityCreatedEvent<SiteCheck>>, QueueEventHandler>();
+
+        // Notification handler — fires notifications when a SiteCheck reaches a terminal state
+        services.AddScoped<IDomainEventHandler<EntityUpdatedEvent<SiteCheck>>, NotificationEventHandler>();
+
         services.AddScoped<ManageSitesUseCase>();
         services.AddScoped<CreateSiteCheckUseCase>();
         services.AddScoped<PerformSiteCheckUseCase>();
         services.AddScoped<ScheduleSiteChecksUseCase>();
+        services.AddScoped<NotifyCheckCompletedUseCase>();
 
         services
             .AddSiteCheckQueueService()
@@ -100,8 +128,6 @@ public class Program
 
         services.AddHttpContextAccessor();
         services.AddPiaService();
-
-        services.AddScoped<IEntityChangeService, EntityChangesService>();
 
         services.TryAddPushoverService(configuration);
         services.TryAddDiscordService(configuration);

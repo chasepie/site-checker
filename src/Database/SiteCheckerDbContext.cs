@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using SiteChecker.Database.Services;
 using SiteChecker.Domain.Entities;
 using SiteChecker.Utilities;
 
@@ -13,12 +12,9 @@ public class SiteCheckerDbContext : DbContext
     public DbSet<SiteCheckScreenshot> SiteCheckScreenshots { get; set; }
 
     private readonly string _dbPath;
-    private readonly IEnumerable<IEntityChangeService> _entityUpdateServices;
 
-    public SiteCheckerDbContext(
-        IEnumerable<IEntityChangeService>? entityUpdateServices = null)
+    public SiteCheckerDbContext()
     {
-        _entityUpdateServices = entityUpdateServices ?? [];
         string dbDir;
 
         if (!EnvironmentUtils.IsDockerContainer()
@@ -41,10 +37,6 @@ public class SiteCheckerDbContext : DbContext
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         optionsBuilder.UseSqlite($"Data Source={_dbPath}");
-        if (_entityUpdateServices != null)
-        {
-            optionsBuilder.AddInterceptors(new ChangesInterceptor(_entityUpdateServices));
-        }
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

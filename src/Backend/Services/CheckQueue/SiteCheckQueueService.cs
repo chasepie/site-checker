@@ -1,29 +1,15 @@
 using System.Threading.Channels;
-using SiteChecker.Database;
-using SiteChecker.Database.Services;
 using SiteChecker.Domain.Entities;
-using SiteChecker.Domain.Enums;
+using SiteChecker.Domain.Ports;
 
 namespace SiteChecker.Backend.Services.CheckQueue;
 
-public interface ISiteCheckQueueService
+public class SiteCheckQueueService : ISiteCheckQueue
 {
-    ValueTask QueueCheckAsync(
-        SiteCheck siteCheck,
-        CancellationToken cancellationToken = default);
-
-    ValueTask<int> DequeueAsync(CancellationToken cancellationToken);
-}
-
-public class SiteCheckQueueService : ISiteCheckQueueService, IEntityChangeService
-{
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly Channel<int> _queue;
 
-    public SiteCheckQueueService(IServiceScopeFactory scopeFactory)
+    public SiteCheckQueueService()
     {
-        _scopeFactory = scopeFactory;
-
         var options = new BoundedChannelOptions(100)
         {
             FullMode = BoundedChannelFullMode.Wait
@@ -42,37 +28,6 @@ public class SiteCheckQueueService : ISiteCheckQueueService, IEntityChangeServic
     {
         return await _queue.Reader.ReadAsync(cancellationToken);
     }
-
-    public async Task OnEntityCreated(
-        CreatedEntityChange change,
-        CancellationToken cancellationToken)
-    {
-        if (change.EntityTypeName == nameof(SiteCheck)
-            && change.Entity is SiteCheck siteCheck
-            && siteCheck.Status == CheckStatus.Created)
-        {
-            using var dbContext = _scopeFactory.CreateScope()
-                .ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
-            siteCheck.Status = CheckStatus.Queued;
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            await QueueCheckAsync(siteCheck, cancellationToken);
-        }
-    }
-
-    public Task OnEntityDeleted(
-        DeletedEntityChange change,
-        CancellationToken cancellationToken = default)
-    {
-        return Task.CompletedTask;
-    }
-
-    public Task OnEntityUpdated(
-        UpdatedEntityChange change,
-        CancellationToken cancellationToken = default)
-    {
-        return Task.CompletedTask;
-    }
 }
 
 public static class SiteCheckQueueServiceExtensions
@@ -83,10 +38,9 @@ public static class SiteCheckQueueServiceExtensions
         {
             return services
                 .AddSingleton<SiteCheckQueueService>()
-                .AddSingleton<ISiteCheckQueueService>(sp =>
-                    sp.GetRequiredService<SiteCheckQueueService>())
-                .AddSingleton<IEntityChangeService>(sp =>
+                .AddSingleton<ISiteCheckQueue>(sp =>
                     sp.GetRequiredService<SiteCheckQueueService>());
         }
     }
 }
+

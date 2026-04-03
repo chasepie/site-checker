@@ -46,31 +46,6 @@ export const SiteUpdate = z.object({
 });
 export type SiteUpdate = z.infer<typeof SiteUpdate>;
 
-export const IEntityChange = z.object({
-	entityTypeName: z.string(),
-	entityId: z.number(),
-});
-export type IEntityChange = z.infer<typeof IEntityChange>;
-
-export const EntityChange = IEntityChange.extend({
-});
-export type EntityChange = z.infer<typeof EntityChange>;
-
-export const CreatedEntityChange = EntityChange.extend({
-	entity: z.unknown(),
-});
-export type CreatedEntityChange = z.infer<typeof CreatedEntityChange>;
-
-export const UpdatedEntityChange = EntityChange.extend({
-	oldEntity: z.unknown(),
-	newEntity: z.unknown(),
-});
-export type UpdatedEntityChange = z.infer<typeof UpdatedEntityChange>;
-
-export const DeletedEntityChange = EntityChange.extend({
-});
-export type DeletedEntityChange = z.infer<typeof DeletedEntityChange>;
-
 export const PiaLocation = z.object({
 	name: z.string(),
 	id: z.string(),
