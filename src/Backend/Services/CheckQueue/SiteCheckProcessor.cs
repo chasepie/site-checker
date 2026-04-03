@@ -49,7 +49,7 @@ public class SiteCheckQueueProcessor(
                     var siteCheck = await repo.GetByIdAsync(siteCheckId, stoppingToken);
                     if (siteCheck != null)
                     {
-                        siteCheck.Update(ex);
+                        siteCheck.FailWithException(ex);
                         await repo.UpdateAsync(siteCheck, stoppingToken);
                     }
                 }

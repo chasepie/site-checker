@@ -95,7 +95,11 @@ public class SiteCheck : IEntityWithId
         DoneDate = DateTime.UtcNow;
     }
 
-    public void Update(Exception ex)
+    /// <summary>
+    /// Marks the check as failed due to an unhandled exception.
+    /// </summary>
+    /// <param name="ex">The exception that caused the failure.</param>
+    public void FailWithException(Exception ex)
     {
         Status = CheckStatus.Failed;
         Value = ex.Message;
