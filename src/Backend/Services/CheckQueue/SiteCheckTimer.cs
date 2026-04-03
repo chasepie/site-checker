@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Database;
-using SiteChecker.Database.Model;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Enums;
 
 namespace SiteChecker.Backend.Services.CheckQueue;
 
@@ -73,7 +74,7 @@ public class SiteCheckTimer(
             async Task CreateSiteCheck(Site site)
             {
                 _logger.LogInformation("Queueing check for {SiteName}.", site.Name);
-                var siteCheck = new SiteCheck(site);
+                var siteCheck = new SiteCheck(site.Id);
                 await dbContext.SiteChecks.AddAsync(siteCheck, stoppingToken);
                 await dbContext.SaveChangesAsync(stoppingToken);
             }

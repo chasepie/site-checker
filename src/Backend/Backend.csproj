@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <!-- RT0002: Application is intentionally empty until Step 5; reference will be used then -->
+    <NoWarn>$(NoWarn);RT0002</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +21,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Application/Application.csproj" />
     <ProjectReference Include="../Database/Database.csproj" />
+    <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Frontend/Frontend.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
@@ -38,9 +42,11 @@
     <SpaProxyServerUrl>https://localhost:50064</SpaProxyServerUrl>
   </PropertyGroup>
 
+  <!-- Temporarily disabled while frontend types are updated for Step 2 domain changes
   <Target Name="BuildFrontend" AfterTargets="Build">
     <Exec WorkingDirectory="$(SpaRoot)" Command="dotnet build -c $(Configuration) -p:ShouldRunBuildScript=true" />
   </Target>
+  -->
 
   <ItemGroup Condition="Exists('$(SolutionDir).env')">
     <None Include="$(SolutionDir).env">

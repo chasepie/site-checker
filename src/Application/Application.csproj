@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- RT0002: Domain is intentionally empty until Step 2; reference will be used then -->
+    <!-- RT0002: Application has no use cases yet; reference will be used from Step 5 -->
     <NoWarn>$(NoWarn);RT0002</NoWarn>
   </PropertyGroup>
 

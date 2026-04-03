@@ -2,8 +2,11 @@ using Microsoft.AspNetCore.Mvc;
 using Reinforced.Typings.Ast.TypeNames;
 using Reinforced.Typings.Fluent;
 using SiteChecker.Backend.Services.VPN;
-using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
+using SiteChecker.Domain.DTOs;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Enums;
+using SiteChecker.Domain.ValueObjects;
 
 namespace SiteChecker.Backend.Generators;
 

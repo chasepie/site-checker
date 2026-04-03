@@ -1,12 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Backend.Extensions;
-using SiteChecker.Database;
-using SiteChecker.Database.Model;
-using SiteChecker.Database.Services;
 using SiteChecker.Backend.Notifiers.Discord;
 using SiteChecker.Backend.Notifiers.Pushover;
-using SiteChecker.Scraper;
+using SiteChecker.Database;
+using SiteChecker.Database.Services;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Enums;
 
 namespace SiteChecker.Backend.Services;
 
@@ -108,31 +108,21 @@ public class NotifierService(
         SiteCheck siteCheck,
         CancellationToken cancellationToken = default)
     {
-        if (siteCheck.Site == null)
-        {
-            await dbContext
-                .Entry(siteCheck)
-                .Reference(sc => sc.Site)
-                .LoadAsync(cancellationToken);
-        }
+        var site = await dbContext.Sites
+            .FirstOrDefaultAsync(s => s.Id == siteCheck.SiteId, cancellationToken);
 
-        if (siteCheck.Site == null)
+        if (site == null)
         {
             _logger.LogWarning("SiteCheck {SiteCheckId} has no associated Site; skipping notifications.", siteCheck.Id);
             return;
         }
 
-        if (siteCheck.Screenshot == null)
-        {
-            await dbContext
-                .Entry(siteCheck)
-                .Reference(sc => sc.Screenshot)
-                .LoadAsync(cancellationToken);
-        }
+        var screenshot = await dbContext.SiteCheckScreenshots
+            .FirstOrDefaultAsync(s => s.SiteCheckId == siteCheck.Id, cancellationToken);
 
         await Task.WhenAll(
-            TrySendPushoverMessageAsync(siteCheck, cancellationToken),
-            TrySendDiscordMessageAsync(siteCheck, cancellationToken));
+            TrySendPushoverMessageAsync(site, siteCheck, screenshot, cancellationToken),
+            TrySendDiscordMessageAsync(site, siteCheck, cancellationToken));
     }
 
     [MemberNotNullWhen(true, nameof(_pushoverService))]
@@ -163,23 +153,25 @@ public class NotifierService(
     }
 
     private async Task TrySendPushoverMessageAsync(
+        Site site,
         SiteCheck siteCheck,
+        SiteCheckScreenshot? screenshot,
         CancellationToken cancellationToken)
     {
-        if (!CanSendPushoverMessage(siteCheck.Site, siteCheck.IsSuccess))
+        if (!CanSendPushoverMessage(site, siteCheck.IsSuccess))
         {
             return;
         }
 
-        _logger.LogTrace("Sending Pushover notification for site {SiteId}", siteCheck.Site.Id);
+        _logger.LogTrace("Sending Pushover notification for site {SiteId}", site.Id);
         try
         {
-            await _pushoverService.SendMessageAsync(siteCheck.ToPushoverContents()!, cancellationToken);
-            _logger.LogTrace("Pushover notification sent for site {SiteId}", siteCheck.Site.Id);
+            await _pushoverService.SendMessageAsync(siteCheck.ToPushoverContents(site, screenshot)!, cancellationToken);
+            _logger.LogTrace("Pushover notification sent for site {SiteId}", site.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send Pushover notification for site {SiteId}", siteCheck.Site.Id);
+            _logger.LogError(ex, "Failed to send Pushover notification for site {SiteId}", site.Id);
         }
     }
 
@@ -217,27 +209,28 @@ public class NotifierService(
     }
 
     private async Task TrySendDiscordMessageAsync(
+        Site site,
         SiteCheck siteCheck,
         CancellationToken cancellationToken)
     {
-        if (!CanSendDiscordMessage(siteCheck.Site, siteCheck.IsSuccess))
+        if (!CanSendDiscordMessage(site, siteCheck.IsSuccess))
         {
             return;
         }
 
         ArgumentNullException.ThrowIfNull(_discordService);
-        _logger.LogTrace("Sending Discord notification for site {SiteId}", siteCheck.Site.Id);
+        _logger.LogTrace("Sending Discord notification for site {SiteId}", site.Id);
         try
         {
             await _discordService.SendMessageAsync(
-                siteCheck.ToDiscordEmbed(),
-                siteCheck.Site.DiscordConfig.ChannelId!.Value,
+                siteCheck.ToDiscordEmbed(site),
+                site.DiscordConfig.ChannelId!.Value,
                 cancellationToken);
-            _logger.LogTrace("Discord notification sent for site {SiteId}", siteCheck.Site.Id);
+            _logger.LogTrace("Discord notification sent for site {SiteId}", site.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send Discord notification for site {SiteId}", siteCheck.Site.Id);
+            _logger.LogError(ex, "Failed to send Discord notification for site {SiteId}", site.Id);
         }
     }
 }

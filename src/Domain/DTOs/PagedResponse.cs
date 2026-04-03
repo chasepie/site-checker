@@ -1,4 +1,4 @@
-namespace SiteChecker.Database.Model;
+namespace SiteChecker.Domain.DTOs;
 
 public class PagedResponse<T> where T : class
 {

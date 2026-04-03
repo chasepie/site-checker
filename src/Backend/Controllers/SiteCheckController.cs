@@ -3,7 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using SiteChecker.Backend.Extensions;
 using SiteChecker.Database;
 using SiteChecker.Database.Extensions;
-using SiteChecker.Database.Model;
+using SiteChecker.Domain.DTOs;
+using SiteChecker.Domain.Entities;
 using SiteChecker.Scraper;
 
 namespace SiteChecker.Backend.Controllers;
@@ -48,13 +49,18 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
         [FromRoute] int siteId,
         [FromRoute] int id)
     {
-        var siteCheck = await _dbContext.SiteChecks
+        var exists = await _dbContext.SiteChecks
             .AsNoTracking()
-            .Include(sc => sc.Screenshot)
-            .FirstOrDefaultAsync(
-                sc => sc.Id == id && sc.SiteId == siteId,
-                CancellationToken);
-        return this.OkOrNotFound(siteCheck?.Screenshot);
+            .AnyAsync(sc => sc.Id == id && sc.SiteId == siteId, CancellationToken);
+        if (!exists)
+        {
+            return NotFound();
+        }
+
+        var screenshot = await _dbContext.SiteCheckScreenshots
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SiteCheckId == id, CancellationToken);
+        return this.OkOrNotFound(screenshot);
     }
 
     [HttpPost]
@@ -70,7 +76,7 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
             return NotFound();
         }
 
-        var siteCheck = new SiteCheck(site);
+        var siteCheck = new SiteCheck(site.Id);
         var entityEntry = _dbContext.SiteChecks.Add(siteCheck);
         await _dbContext.SaveChangesAsync(CancellationToken);
 
@@ -93,7 +99,7 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
             return NotFound();
         }
 
-        var siteCheck = new SiteCheck(site);
+        var siteCheck = new SiteCheck(site.Id);
         var empty = new SuccessScrapeResult
         {
             Content = "[Empty Check]"

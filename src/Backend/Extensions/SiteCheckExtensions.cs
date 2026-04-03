@@ -1,7 +1,7 @@
-using System.Diagnostics.CodeAnalysis;
 using NetCord.Rest;
-using SiteChecker.Database.Model;
 using SiteChecker.Backend.Notifiers.Pushover;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Enums;
 using SiteChecker.Scraper;
 using SiteChecker.Scraper.Exceptions;
 
@@ -9,7 +9,6 @@ namespace SiteChecker.Backend.Extensions;
 
 public static class SiteCheckExtensions
 {
-    private const string SCRAPE_RESULT = nameof(SCRAPE_RESULT);
     private const string EXCEPTION_TYPE = nameof(EXCEPTION_TYPE);
 
     extension(SiteCheck siteCheck)
@@ -32,7 +31,6 @@ public static class SiteCheckExtensions
             }
 
             siteCheck.DoneDate = DateTime.UtcNow;
-            siteCheck.MetadataLocal[SCRAPE_RESULT] = result;
             if (result.IsFailure(out var failureResult) && failureResult.Exception != null)
             {
                 var exceptionType = failureResult.Exception.GetType().FullName;
@@ -47,30 +45,6 @@ public static class SiteCheckExtensions
             }
         }
 
-        public IScrapeResult? GetScrapeResult()
-        {
-            if (siteCheck.MetadataLocal.TryGetValue(SCRAPE_RESULT, out var result)
-                && result is IScrapeResult scrapeResult)
-            {
-                return scrapeResult;
-            }
-
-            return null;
-        }
-
-        public bool TryGetFailureResult([NotNullWhen(true)] out FailureScrapeResult? failureResult)
-        {
-            var scrapeResult = siteCheck.GetScrapeResult();
-            if (scrapeResult is FailureScrapeResult failure)
-            {
-                failureResult = failure;
-                return true;
-            }
-
-            failureResult = null;
-            return false;
-        }
-
         public bool IsKnownExceptionFailure()
         {
             if (siteCheck.Status != CheckStatus.Failed)
@@ -78,13 +52,7 @@ public static class SiteCheckExtensions
                 return false;
             }
 
-            if (siteCheck.TryGetFailureResult(out var failureResult))
-            {
-                return failureResult.Exception is KnownScraperException;
-            }
-
-            if (siteCheck.Metadata.TryGetValue(EXCEPTION_TYPE, out var exceptionTypeObj)
-                && exceptionTypeObj is string exceptionType
+            if (siteCheck.Metadata.TryGetValue(EXCEPTION_TYPE, out var exceptionType)
                 && !string.IsNullOrEmpty(exceptionType))
             {
                 return exceptionType.EndsWith(nameof(KnownScraperException))
@@ -95,16 +63,12 @@ public static class SiteCheckExtensions
             return false;
         }
 
-        private string GetTitle() => siteCheck.Site.Name + (siteCheck.IsSuccess ? " Updated" : " Check Failed");
-
-        private string GetMessage() => siteCheck.Value ?? "[No content]";
-
-        public PushoverContents? ToPushoverContents()
+        public PushoverContents? ToPushoverContents(Site site, SiteCheckScreenshot? screenshot)
         {
             var priority = siteCheck.Status switch
             {
-                CheckStatus.Done => siteCheck.Site.PushoverConfig.SuccessPriority,
-                CheckStatus.Failed => siteCheck.Site.PushoverConfig.FailurePriority,
+                CheckStatus.Done => site.PushoverConfig.SuccessPriority,
+                CheckStatus.Failed => site.PushoverConfig.FailurePriority,
                 _ => null,
             };
             if (priority == null)
@@ -114,22 +78,26 @@ public static class SiteCheckExtensions
 
             return new()
             {
-                Title = siteCheck.GetTitle(),
+                Title = siteCheck.GetTitle(site),
                 Message = siteCheck.GetMessage(),
                 Priority = (int)priority,
-                Url = siteCheck.Site.Url.ToString(),
-                Attachment = siteCheck.Screenshot?.Data,
+                Url = site.Url.ToString(),
+                Attachment = screenshot?.Data,
             };
         }
 
-        public EmbedProperties ToDiscordEmbed()
+        public EmbedProperties ToDiscordEmbed(Site site)
         {
             return new EmbedProperties()
             {
-                Title = siteCheck.GetTitle(),
+                Title = siteCheck.GetTitle(site),
                 Description = siteCheck.GetMessage(),
-                Url = siteCheck.Site.Url.ToString(),
+                Url = site.Url.ToString(),
             };
         }
+
+        private string GetTitle(Site site) => site.Name + (siteCheck.IsSuccess ? " Updated" : " Check Failed");
+
+        private string GetMessage() => siteCheck.Value ?? "[No content]";
     }
 }

@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Database;
-using SiteChecker.Database.Model;
+using SiteChecker.Domain.Entities;
 using SiteChecker.Scraper.Scrapers;
 
 namespace SiteChecker.Backend.Services;

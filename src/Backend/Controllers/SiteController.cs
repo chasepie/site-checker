@@ -2,7 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Backend.Extensions;
 using SiteChecker.Database;
-using SiteChecker.Database.Model;
+using SiteChecker.Domain.DTOs;
+using SiteChecker.Domain.Entities;
 
 namespace SiteChecker.Backend.Controllers;
 
@@ -20,9 +21,6 @@ public class SiteController(SiteCheckerDbContext dbContext)
     {
         var sites = await _dbContext.Sites
             .AsNoTracking()
-            .Include(s => s.SiteChecks
-                .OrderByDescending(sc => sc.StartDate)
-                .Take(1))
             .ToListAsync(CancellationToken);
         return Ok(sites);
     }

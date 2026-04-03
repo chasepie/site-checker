@@ -73,10 +73,10 @@
       "NetCord.Hosting": {
         "type": "Direct",
         "requested": "[1.0.0-alpha*, )",
-        "resolved": "1.0.0-alpha.479",
-        "contentHash": "rDg76U3VkTHHOPKX8abLcVgvwl5VopriNlBKtV+6fm5jslmNbyS7HbGHe56e4B3IQ2b4v7p3r+MyHW0rMhiqVw==",
+        "resolved": "1.0.0-alpha.480",
+        "contentHash": "3I2Teo86ngY6Fps+tzoBvCP8g5nzi1lC3cpp1KzTe8uMEVOK7zsgSWq0gn+YmcTl/Mqc/YEyf2MC9nmF6D+PSg==",
         "dependencies": {
-          "NetCord": "1.0.0-alpha.479"
+          "NetCord": "1.0.0-alpha.480"
         }
       },
       "OpenTelemetry.Exporter.OpenTelemetryProtocol": {
@@ -318,8 +318,8 @@
       },
       "NetCord": {
         "type": "Transitive",
-        "resolved": "1.0.0-alpha.479",
-        "contentHash": "htqCn/epI3x7hoFDgPTyEH17At36QtUuln11TRSyfE9fVlPJAwWCC4gnaZM4VB8g7UGgdmr04yXz5J5pG4EMkQ=="
+        "resolved": "1.0.0-alpha.480",
+        "contentHash": "UM7G30nsCUT3zraW1PGDJtDbVGT1GNaV8MnTiD0FRzX2Bfz40Fj/jVgG60e7qbD/gUWEOJLZ0TG5HpEYnt6r8g=="
       },
       "OpenTelemetry": {
         "type": "Transitive",
@@ -632,12 +632,22 @@
           "System.Private.ServiceModel": "4.7.0"
         }
       },
+      "application": {
+        "type": "Project",
+        "dependencies": {
+          "Domain": "[1.0.0, )"
+        }
+      },
       "database": {
         "type": "Project",
         "dependencies": {
+          "Domain": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.5, )",
           "Utilities": "[1.0.0, )"
         }
+      },
+      "domain": {
+        "type": "Project"
       },
       "scraper": {
         "type": "Project",

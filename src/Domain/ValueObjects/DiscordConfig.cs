@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace SiteChecker.Database.Model;
+namespace SiteChecker.Domain.ValueObjects;
 
 public class DiscordConfig
 {

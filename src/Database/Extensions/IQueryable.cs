@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SiteChecker.Database.Model;
+using SiteChecker.Domain.DTOs;
 
 namespace SiteChecker.Database.Extensions;
 

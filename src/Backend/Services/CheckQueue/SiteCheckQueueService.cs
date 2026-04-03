@@ -1,7 +1,8 @@
 using System.Threading.Channels;
 using SiteChecker.Database;
-using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Enums;
 
 namespace SiteChecker.Backend.Services.CheckQueue;
 

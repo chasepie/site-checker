@@ -33,33 +33,8 @@ export function PagedResponse<T extends z.ZodType>(itemSchema: T) {
 }
 export type PagedResponse<T extends z.ZodType> = z.infer<ReturnType<typeof PagedResponse<T>>>;
 
-export const DiscordConfig = z.object({
-	successEnabled: z.boolean(),
-	failureEnabled: z.boolean(),
-	channelId: z.string().nullable(),
-});
-export type DiscordConfig = z.infer<typeof DiscordConfig>;
-
-export const IEntityWithId = z.object({
+export const SiteUpdate = z.object({
 	id: z.number(),
-});
-export type IEntityWithId = z.infer<typeof IEntityWithId>;
-
-export const PushoverConfig = z.object({
-	successPriority: PushoverPriority.nullable(),
-	failurePriority: PushoverPriority.nullable(),
-});
-export type PushoverConfig = z.infer<typeof PushoverConfig>;
-
-export const SiteSchedule = z.object({
-	enabled: z.boolean(),
-	start: z.string().nullable(),
-	end: z.string().nullable(),
-	interval: z.number().nullable(),
-});
-export type SiteSchedule = z.infer<typeof SiteSchedule>;
-
-export const SiteUpdate = IEntityWithId.extend({
 	name: z.string(),
 	url: z.string(),
 	useVpn: z.boolean(),
@@ -70,28 +45,6 @@ export const SiteUpdate = IEntityWithId.extend({
 	discordConfig: DiscordConfig,
 });
 export type SiteUpdate = z.infer<typeof SiteUpdate>;
-
-export const SiteCheck = IEntityWithId.extend({
-	value: z.string().nullable(),
-	vpnLocationId: z.string().nullable(),
-	status: CheckStatus,
-	startDate: z.string(),
-	doneDate: z.string().nullable(),
-	siteId: z.number(),
-});
-export type SiteCheck = z.infer<typeof SiteCheck>;
-
-export const Site = SiteUpdate.extend({
-	scraperId: z.string(),
-	siteChecks: z.array(SiteCheck),
-});
-export type Site = z.infer<typeof Site>;
-
-export const SiteCheckScreenshot = IEntityWithId.extend({
-	data: z.string(),
-	siteCheckId: z.number(),
-});
-export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 
 export const IEntityChange = z.object({
 	entityTypeName: z.string(),
@@ -125,6 +78,64 @@ export const PiaLocation = z.object({
 	excluded: z.boolean(),
 });
 export type PiaLocation = z.infer<typeof PiaLocation>;
+
+export const DiscordConfig = z.object({
+	successEnabled: z.boolean(),
+	failureEnabled: z.boolean(),
+	channelId: z.string().nullable(),
+});
+export type DiscordConfig = z.infer<typeof DiscordConfig>;
+
+export const PushoverConfig = z.object({
+	successPriority: PushoverPriority.nullable(),
+	failurePriority: PushoverPriority.nullable(),
+});
+export type PushoverConfig = z.infer<typeof PushoverConfig>;
+
+export const SiteSchedule = z.object({
+	enabled: z.boolean(),
+	start: z.string().nullable(),
+	end: z.string().nullable(),
+	interval: z.number().nullable(),
+});
+export type SiteSchedule = z.infer<typeof SiteSchedule>;
+
+export const IEntityWithId = z.object({
+	id: z.number(),
+});
+export type IEntityWithId = z.infer<typeof IEntityWithId>;
+
+export const SiteCheck = IEntityWithId.extend({
+	value: z.string().nullable(),
+	vpnLocationId: z.string().nullable(),
+	status: CheckStatus,
+	startDate: z.string(),
+	doneDate: z.string().nullable(),
+	siteId: z.number(),
+	metadata: z.array(z.string()),
+	isSuccess: z.boolean(),
+	isComplete: z.boolean(),
+});
+export type SiteCheck = z.infer<typeof SiteCheck>;
+
+export const Site = IEntityWithId.extend({
+	name: z.string(),
+	url: z.string(),
+	useVpn: z.boolean(),
+	alwaysTakeScreenshot: z.boolean(),
+	knownFailuresThreshold: z.number(),
+	schedule: SiteSchedule,
+	pushoverConfig: PushoverConfig,
+	discordConfig: DiscordConfig,
+	scraperId: z.string(),
+});
+export type Site = z.infer<typeof Site>;
+
+export const SiteCheckScreenshot = IEntityWithId.extend({
+	data: z.string(),
+	siteCheckId: z.number(),
+});
+export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 
 @Injectable({ providedIn: 'root'}) export class SiteCheckController
 {

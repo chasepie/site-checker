@@ -3,7 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using SiteChecker.Backend.Extensions;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
-using SiteChecker.Database.Model;
+using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Enums;
 using SiteChecker.Scraper;
 
 namespace SiteChecker.Backend.Services.CheckQueue;
@@ -87,7 +88,6 @@ public class SiteCheckQueueProcessor : BackgroundService
             await using var scope = _scopeFactory.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
             var siteCheck = await dbContext.SiteChecks
-                .Include(sc => sc.Site)
                 .FirstOrDefaultAsync(sc => sc.Id == siteCheckId, stoppingToken);
             if (siteCheck == null)
             {
@@ -95,13 +95,21 @@ public class SiteCheckQueueProcessor : BackgroundService
                 continue;
             }
 
+            var site = await dbContext.Sites
+                    .FirstOrDefaultAsync(s => s.Id == siteCheck.SiteId, stoppingToken);
+            if (site == null)
+            {
+                _logger.LogWarning("Site for check {SiteCheckId} not found, skipping.", siteCheckId);
+                continue;
+            }
+
             try
             {
-                await PerformCheckAsync(siteCheck, dbContext, stoppingToken);
+                await PerformCheckAsync(siteCheck, site, dbContext, stoppingToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred executing {CheckName}.", siteCheck.Site.Name);
+                _logger.LogError(ex, "Error occurred executing {CheckName}.", site.Name);
                 siteCheck.Update(ex);
                 await dbContext.SaveChangesAsync(stoppingToken);
             }
@@ -112,16 +120,18 @@ public class SiteCheckQueueProcessor : BackgroundService
     /// Performs a site check using the scraper service and updates the database with the results.
     /// </summary>
     /// <param name="siteCheck">The site check to perform.</param>
+    /// <param name="site">The site being checked.</param>
     /// <param name="dbContext">The database context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task PerformCheckAsync(
         SiteCheck siteCheck,
+        Site site,
         SiteCheckerDbContext dbContext,
         CancellationToken cancellationToken)
     {
         siteCheck.Status = CheckStatus.Checking;
-        siteCheck.VpnLocationId = await GetVpnLocationAsync(siteCheck, cancellationToken);
+        siteCheck.VpnLocationId = await GetVpnLocationAsync(site, cancellationToken);
 
         // Save before scraping so clients receive a real-time status update via SignalR while the
         // (potentially long-running) scrape is in progress. An EF Core SaveChanges interceptor
@@ -131,9 +141,9 @@ public class SiteCheckQueueProcessor : BackgroundService
         var request = new ScrapeRequest
         {
             Id = siteCheck.Id,
-            ScraperId = siteCheck.Site.ScraperId,
-            BrowserType = _scraperService.GetBrowserType(siteCheck.Site.UseVpn),
-            AlwaysTakeScreenshot = siteCheck.Site.AlwaysTakeScreenshot,
+            ScraperId = site.ScraperId,
+            BrowserType = _scraperService.GetBrowserType(site.UseVpn),
+            AlwaysTakeScreenshot = site.AlwaysTakeScreenshot,
         };
 
         var result = await _scraperService.ScrapeContentAsync(request);
@@ -141,7 +151,7 @@ public class SiteCheckQueueProcessor : BackgroundService
 
         if (result.Screenshot is not null)
         {
-            var screenshot = new SiteCheckScreenshot(siteCheck, result.Screenshot);
+            var screenshot = new SiteCheckScreenshot(siteCheck.Id, result.Screenshot);
             await dbContext.SiteCheckScreenshots.AddAsync(screenshot, cancellationToken);
         }
 
@@ -152,13 +162,13 @@ public class SiteCheckQueueProcessor : BackgroundService
     /// Resolves the location label used for the current check based on browser mode. If using a
     /// VPN, may change the region if the configured interval has elapsed.
     /// </summary>
-    /// <param name="siteCheck">The site check for which to determine the VPN location.</param>
+    /// <param name="site">The site being checked.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>The name of the VPN location to use.</returns>
     /// <exception cref="InvalidOperationException">Thrown if an unsupported browser type is encountered.</exception>
-    private async Task<string> GetVpnLocationAsync(SiteCheck siteCheck, CancellationToken cancellationToken)
+    private async Task<string> GetVpnLocationAsync(Site site, CancellationToken cancellationToken)
     {
-        var browserType = _scraperService.GetBrowserType(siteCheck.Site.UseVpn);
+        var browserType = _scraperService.GetBrowserType(site.UseVpn);
         if (browserType == BrowserType.Local)
         {
             return "Local browser";

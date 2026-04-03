@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
+using SiteChecker.Domain.Entities;
 using SiteChecker.Utilities;
 
 namespace SiteChecker.Database;
@@ -49,6 +49,11 @@ public class SiteCheckerDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Site unique index on ScraperId (replaces [Index] attribute)
+        modelBuilder.Entity<Site>()
+            .HasIndex(s => s.ScraperId).IsUnique();
+
+        // Site complex properties stored as JSON
         modelBuilder.Entity<Site>()
             .ComplexProperty(s => s.Schedule, b => b.ToJson());
 
@@ -60,8 +65,26 @@ public class SiteCheckerDbContext : DbContext
 
         modelBuilder.Entity<Site>()
             .Property(s => s.KnownFailuresThreshold)
-            .HasDefaultValue(SiteUpdate.KNOWN_FAILURES_THRESHOLD_DEFAULT);
+            .HasDefaultValue(Site.KnownFailuresThresholdDefault);
 
+        // Site → SiteChecks (one-to-many), no navigation properties on entities
+        modelBuilder.Entity<Site>()
+            .HasMany<SiteCheck>()
+            .WithOne()
+            .HasForeignKey(sc => sc.SiteId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // SiteCheck → SiteCheckScreenshot (one-to-one), no navigation properties on entities
+        modelBuilder.Entity<SiteCheckScreenshot>()
+            .HasIndex(s => s.SiteCheckId).IsUnique();
+
+        modelBuilder.Entity<SiteCheckScreenshot>()
+            .HasOne<SiteCheck>()
+            .WithOne()
+            .HasForeignKey<SiteCheckScreenshot>(s => s.SiteCheckId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // SiteCheck.Metadata stored as JSON string
         JsonSerializerOptions? options = null;
         modelBuilder.Entity<SiteCheck>()
             .Property(s => s.Metadata)

@@ -1,4 +1,4 @@
-namespace SiteChecker.Database.Model;
+namespace SiteChecker.Domain.Entities;
 
 public interface IEntityWithId
 {
