@@ -24,6 +24,8 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 
 ## Architecture
 
+The project follows a **hexagonal architecture** (ports and adapters) pattern, keeping the domain model free of infrastructure concerns. Dependency flow is strictly inward — outer layers depend on inner layers, never the reverse.
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Frontend (Angular 21)                │
@@ -32,23 +34,43 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
                        │ HTTP/SignalR
 ┌──────────────────────▼──────────────────────────────────┐
 │              Backend (ASP.NET Core)                     │
-│  API Server, Scraping Orchestration, VPN Management     │
-└─┬────────────┬───────────────────────┬──────────────────┘
-  │            │                       │
-  ▼            ▼                       ▼
-┌────────┐  ┌─────────────┐   ┌──────────────────────┐
-│Database│  │  Notifiers  │   │   Browserless        │
-│(SQLite)│  │Push/Discord │   │Standard & VPN-routed │
-└────────┘  └─────────────┘   └──────────────────────┘
+│  Controllers, DI wiring, domain event handlers          │
+└─┬──────────────────────┬──────────────────────────────┬─┘
+  │                      │                              │
+  ▼                      ▼                              ▼
+┌────────────┐  ┌──────────────────┐   ┌──────────────────────┐
+│  Database  │  │     Scraper      │   │   Browserless        │
+│EF Core +   │  │Playwright-based  │   │Standard & VPN-routed │
+│  SQLite    │  │scraping library  │   └──────────────────────┘
+└──────┬─────┘  └────────┬─────────┘
+       │                 │
+       │   ┌─────────────▼────────────┐
+       └──►│  Application (Use Cases) │
+           │PerformSiteCheck,Schedule,│
+           │  Notify, ManageSites     │
+           └─────────────┬────────────┘
+                         │
+           ┌─────────────▼────────────┐
+           │         Domain           │
+           │ Entities, Value Objects, │
+           │   Ports (interfaces),    │
+           │  Domain Events, no deps  │
+           └──────────────────────────┘
 ```
 
-### Components
+### Layers
 
-- **Backend** — ASP.NET Core API server with controllers, services, and VPN management
-- **Database** — EF Core models, migrations, and services using SQLite
-- **Frontend** — Angular 21 SPA for monitoring and managing site checks
-- **Scraper** — Reusable Playwright-based scraping library
-- **Notifiers** — Pushover and Discord notification implementations
+- **Domain** (`src/Domain/`) — Zero-dependency core: entities (`Site`, `SiteCheck`), value objects (`SiteSchedule`, `VpnLocation`), port interfaces (`ISiteRepository`, `IScrapingService`, etc.), and domain events. No NuGet or project references beyond the BCL.
+- **Application** (`src/Application/`) — Orchestrates use cases (`PerformSiteCheckUseCase`, `ScheduleSiteChecksUseCase`, `NotifyCheckCompletedUseCase`, `ManageSitesUseCase`). References only Domain; no infrastructure dependencies.
+- **Database** (`src/Database/`) — EF Core 10 + SQLite adapter; implements repository ports defined in Domain. Fluent API for relationships and JSON complex properties.
+- **Scraper** (`src/Scraper/`) — Playwright-based browser automation library. Implements `IScrapingService` (domain port). `ScrapeRequest` and `BrowserType` stay here as infrastructure details.
+- **Backend** (`src/Backend/`) — ASP.NET Core host: controllers, DI wiring, background services (`SiteCheckTimer`, `SiteCheckQueueProcessor`), domain event handlers, SignalR hub, VPN service adapter.
+- **Frontend** (`src/Frontend/`) — Angular 21 SPA for monitoring and managing site checks.
+
+### Tests
+
+- **Domain.Test** (`test/Domain.Test/`) — 34 unit tests; references only Domain; no mocks needed.
+- **Application.Test** (`test/Application.Test/`) — 24 tests using NSubstitute; references Application + Domain.
 
 ## Quick Start
 
@@ -96,34 +118,38 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 
 ### Creating a New Scraper
 
-1. Create a class inheriting from `ScraperBase`:
+1. Create a class inheriting from `ScraperBase` in `src/Backend/` (or a dedicated project):
 
 ```csharp
-public class ExampleScraper(ILogger<ExampleScraper> logger)
-    : ScraperBase(logger, ExampleScraper.ScraperId, ExampleScraper.DefaultUrl)
+using SiteChecker.Domain;                  // IScrapeResult, SuccessScrapeResult
+using SiteChecker.Scraper;                 // ScrapeRequest
+using SiteChecker.Scraper.Scrapers;        // ScraperBase
+
+public class ExampleScraper(ILogger<ExampleScraper> logger) : ScraperBase(logger)
 {
     public const string ScraperId = "example-scraper";
     public const string DefaultUrl = "https://example.com";
 
-    protected override async Task<ScrapeResult> DoScrapeAsync(IPage page, ScrapeRequest request)
-    {
-        request.LogInfo(_logger, "Starting scrape");
+    public override string Id => ScraperId;
+    public override string Url => DefaultUrl;
 
-        var locator = await page.WaitForFirstLocatorAsync([
+    protected override async Task<IScrapeResult> DoScrapeAsync(IPage page, ScrapeRequest request)
+    {
+        var locator = await WaitForFirstLocatorAsync(page, [
             page.Locator("selector1"),
             page.Locator("selector2")
         ]);
 
         var text = await locator.TextContentAsync();
 
-        return new ScrapeResult { IsSuccess = true, Content = text };
+        return new SuccessScrapeResult { Content = text };
     }
 }
 ```
 
 2. Register it by calling `services.AddScraper<ExampleScraper>()` inside `AddScraperServices()` in `src/Scraper/ScraperService.cs`.
 
-3. Add an entry in `DataSeeder.cs` to seed the initial site record.
+3. Add an entry in `DataSeeder.cs` to seed the initial site record via `ISiteRepository`.
 
 ## Technology Stack
 
