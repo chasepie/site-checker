@@ -1,20 +1,21 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using SiteChecker.Application.UseCases;
 using SiteChecker.Backend.Extensions;
-using SiteChecker.Database;
-using SiteChecker.Database.Extensions;
 using SiteChecker.Domain.DTOs;
 using SiteChecker.Domain.Entities;
-using SiteChecker.Domain;
 
 namespace SiteChecker.Backend.Controllers;
 
 [Route("api/Site/{siteId}/check")]
 [ApiController]
-public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBase
+public class SiteCheckController(
+    CreateSiteCheckUseCase createSiteCheck,
+    ManageSitesUseCase manageSites)
+    : ControllerBase
 {
     private CancellationToken CancellationToken => HttpContext.RequestAborted;
-    private readonly SiteCheckerDbContext _dbContext = dbContext;
+    private readonly CreateSiteCheckUseCase _createSiteCheck = createSiteCheck;
+    private readonly ManageSitesUseCase _manageSites = manageSites;
 
     [HttpGet]
     public async Task<ActionResult<PagedResponse<SiteCheck>>> GetAllSiteChecks(
@@ -22,11 +23,8 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
         [FromQuery] int pageNumber = 0,
         [FromQuery] int pageSize = 10)
     {
-        var siteChecks = await _dbContext.SiteChecks
-            .AsNoTracking()
-            .Where(sc => sc.SiteId == siteId)
-            .OrderByDescending(sc => sc.StartDate)
-            .ToPagedResponseAsync(pageNumber, pageSize, CancellationToken);
+        var siteChecks = await _manageSites.GetSiteChecksPagedAsync(
+            siteId, pageNumber, pageSize, CancellationToken);
         return Ok(siteChecks);
     }
 
@@ -35,12 +33,7 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
         [FromRoute] int siteId,
         [FromRoute] int id)
     {
-        var siteCheck = await _dbContext.SiteChecks
-            .AsNoTracking()
-            .FirstOrDefaultAsync(
-                sc => sc.Id == id && sc.SiteId == siteId,
-                CancellationToken);
-
+        var siteCheck = await _manageSites.GetSiteCheckAsync(siteId, id, CancellationToken);
         return this.OkOrNotFound(siteCheck);
     }
 
@@ -49,17 +42,7 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
         [FromRoute] int siteId,
         [FromRoute] int id)
     {
-        var exists = await _dbContext.SiteChecks
-            .AsNoTracking()
-            .AnyAsync(sc => sc.Id == id && sc.SiteId == siteId, CancellationToken);
-        if (!exists)
-        {
-            return NotFound();
-        }
-
-        var screenshot = await _dbContext.SiteCheckScreenshots
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.SiteCheckId == id, CancellationToken);
+        var screenshot = await _manageSites.GetScreenshotAsync(siteId, id, CancellationToken);
         return this.OkOrNotFound(screenshot);
     }
 
@@ -67,46 +50,27 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
     public async Task<ActionResult<SiteCheck>> CreateSiteCheck(
         [FromRoute] int siteId)
     {
-        var site = await _dbContext.Sites
-            .FirstOrDefaultAsync(
-                s => s.Id == siteId,
-                CancellationToken);
-        if (site == null)
+        var siteCheck = await _createSiteCheck.ExecuteAsync(siteId, CancellationToken);
+        if (siteCheck == null)
         {
             return NotFound();
         }
 
-        var siteCheck = new SiteCheck(site.Id);
-        var entityEntry = _dbContext.SiteChecks.Add(siteCheck);
-        await _dbContext.SaveChangesAsync(CancellationToken);
-
         return CreatedAtAction(
             nameof(GetSiteCheck),
             new { siteId, id = siteCheck.Id },
-            entityEntry.Entity);
+            siteCheck);
     }
 
     [HttpPost(nameof(CreateEmptyCheck))]
     public async Task<ActionResult<SiteCheck>> CreateEmptyCheck(
         [FromRoute] int siteId)
     {
-        var site = await _dbContext.Sites
-            .FirstOrDefaultAsync(
-                s => s.Id == siteId,
-                CancellationToken);
-        if (site == null)
+        var siteCheck = await _createSiteCheck.ExecuteEmptyAsync(siteId, CancellationToken);
+        if (siteCheck == null)
         {
             return NotFound();
         }
-
-        var siteCheck = new SiteCheck(site.Id);
-        var empty = new SuccessScrapeResult
-        {
-            Content = "[Empty Check]"
-        };
-        siteCheck.Update(empty);
-        _dbContext.SiteChecks.Add(siteCheck);
-        await _dbContext.SaveChangesAsync(CancellationToken);
 
         return CreatedAtAction(
             nameof(GetSiteCheck),
@@ -118,20 +82,13 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
     public async Task<ActionResult> DeleteAllSiteChecks(
         [FromRoute] int siteId)
     {
-        var site = await _dbContext.Sites
-            .FirstOrDefaultAsync(
-                s => s.Id == siteId,
-                CancellationToken);
+        var site = await _manageSites.GetSiteAsync(siteId, CancellationToken);
         if (site == null)
         {
             return NotFound();
         }
 
-        var siteChecks = _dbContext.SiteChecks
-            .Where(sc => sc.SiteId == siteId);
-        _dbContext.SiteChecks.RemoveRange(siteChecks);
-        await _dbContext.SaveChangesAsync(CancellationToken);
-
+        await _manageSites.DeleteSiteChecksAsync(siteId, CancellationToken);
         return NoContent();
     }
 
@@ -140,18 +97,7 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
         [FromRoute] int siteId,
         [FromRoute] int id)
     {
-        var siteCheck = await _dbContext.SiteChecks
-            .FirstOrDefaultAsync(
-                sc => sc.Id == id && sc.SiteId == siteId,
-                CancellationToken);
-        if (siteCheck == null)
-        {
-            return NotFound();
-        }
-
-        _dbContext.SiteChecks.Remove(siteCheck);
-        await _dbContext.SaveChangesAsync(CancellationToken);
-
-        return NoContent();
+        var found = await _manageSites.DeleteSiteCheckAsync(siteId, id, CancellationToken);
+        return found ? NoContent() : NotFound();
     }
 }

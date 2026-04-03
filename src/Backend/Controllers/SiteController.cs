@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using SiteChecker.Application.UseCases;
 using SiteChecker.Backend.Extensions;
-using SiteChecker.Database;
 using SiteChecker.Domain.DTOs;
 using SiteChecker.Domain.Entities;
 
@@ -9,28 +8,24 @@ namespace SiteChecker.Backend.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class SiteController(SiteCheckerDbContext dbContext)
+public class SiteController(ManageSitesUseCase manageSites)
     : ControllerBase
 {
-    private readonly SiteCheckerDbContext _dbContext = dbContext;
+    private readonly ManageSitesUseCase _manageSites = manageSites;
 
     private CancellationToken CancellationToken => HttpContext.RequestAborted;
 
     [HttpGet]
     public async Task<ActionResult<List<Site>>> GetAllSites()
     {
-        var sites = await _dbContext.Sites
-            .AsNoTracking()
-            .ToListAsync(CancellationToken);
+        var sites = await _manageSites.GetAllSitesAsync(CancellationToken);
         return Ok(sites);
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<Site>> GetSite([FromRoute] int id)
     {
-        var site = await _dbContext.Sites
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == id, CancellationToken);
+        var site = await _manageSites.GetSiteAsync(id, CancellationToken);
         return this.OkOrNotFound(site);
     }
 
@@ -44,15 +39,7 @@ public class SiteController(SiteCheckerDbContext dbContext)
             return BadRequest();
         }
 
-        var site = await _dbContext.Sites
-            .FirstOrDefaultAsync(s => s.Id == id, CancellationToken);
-        if (site == null)
-        {
-            return NotFound();
-        }
-
-        site.Update(siteUpdate);
-        await _dbContext.SaveChangesAsync(CancellationToken);
-        return Ok(site);
+        var site = await _manageSites.UpdateSiteAsync(siteUpdate, CancellationToken);
+        return this.OkOrNotFound(site);
     }
 }

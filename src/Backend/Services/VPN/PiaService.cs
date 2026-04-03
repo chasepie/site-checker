@@ -1,11 +1,13 @@
 using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
+using SiteChecker.Domain.Ports;
+using SiteChecker.Domain.ValueObjects;
 using SiteChecker.Utilities;
 
 namespace SiteChecker.Backend.Services.VPN;
 
-public class PiaService : IDisposable
+public class PiaService : IVpnService, IDisposable
 {
     private const string PIA_CONTAINER_NAME = nameof(PIA_CONTAINER_NAME);
     private const string BROWSERLESS_VPN_CONTAINER_NAME = nameof(BROWSERLESS_VPN_CONTAINER_NAME);
@@ -197,6 +199,28 @@ public class PiaService : IDisposable
         return ctnr?.State == "running";
     }
 
+    // ── IVpnService (domain port) ────────────────────────────────────────────
+
+    async Task<VpnLocation> IVpnService.GetCurrentLocationAsync(CancellationToken cancellationToken)
+    {
+        var loc = await GetCurrentLocationAsync(cancellationToken);
+        return new VpnLocation(loc.Id, loc.Name);
+    }
+
+    async Task<VpnLocation> IVpnService.ChangeLocationAsync(
+        bool excludeCurrentLocation,
+        CancellationToken cancellationToken)
+    {
+        var loc = await ChangeLocationAsync(excludeCurrentLocation, cancellationToken);
+        return new VpnLocation(loc.Id, loc.Name);
+    }
+
+    async Task<IReadOnlyList<VpnLocation>> IVpnService.GetAllLocationsAsync(CancellationToken cancellationToken)
+    {
+        var locs = await GetAllLocationsAsync(cancellationToken);
+        return locs.Select(l => new VpnLocation(l.Id, l.Name)).ToList();
+    }
+
     protected virtual void Dispose(bool disposing)
     {
         if (!disposedValue)
@@ -225,7 +249,9 @@ public static class PiaServiceExtensions
     {
         public IServiceCollection AddPiaService()
         {
-            return services.AddSingleton<PiaService>();
+            services.AddSingleton<PiaService>();
+            services.AddSingleton<IVpnService>(sp => sp.GetRequiredService<PiaService>());
+            return services;
         }
     }
 }

@@ -170,7 +170,9 @@ public static class ScraperServiceExtensions
         public IServiceCollection AddScraperServices()
         {
             return services
-                .AddSingleton<IScraperService, ScraperService>()
+                .AddSingleton<ScraperService>()
+                .AddSingleton<IScraperService>(sp => sp.GetRequiredService<ScraperService>())
+                .AddSingleton<IScrapingService>(sp => sp.GetRequiredService<ScraperService>())
                 .AddScraper<PiaLocationScraper>()
                 .AddScraper<BotDetectionScraper>();
         }

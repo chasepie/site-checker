@@ -290,7 +290,7 @@ export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 			}
 		);
 		const result = await lastValueFrom(obs$);
-		return PiaLocation.parse(result);
+		return any.parse(result);
 	}
 	public async getCurrentLocation() 
 	{
@@ -303,7 +303,7 @@ export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 			}
 		);
 		const result = await lastValueFrom(obs$);
-		return PiaLocation.parse(result);
+		return any.parse(result);
 	}
 	public async getAllLocations() 
 	{
@@ -316,7 +316,7 @@ export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 			}
 		);
 		const result = await lastValueFrom(obs$);
-		return PiaLocation.array().parse(result);
+		return any.array().parse(result);
 	}
 }
 export const SignalRConstants = {

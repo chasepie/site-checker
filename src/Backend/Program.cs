@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using dotenv.net;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using SiteChecker.Application.UseCases;
 using SiteChecker.Backend.JsonConverters;
 using SiteChecker.Backend.Services;
 using SiteChecker.Backend.Services.CheckQueue;
@@ -86,6 +87,11 @@ public class Program
 
         services.AddScoped<ISiteRepository, SiteRepository>();
         services.AddScoped<ISiteCheckRepository, SiteCheckRepository>();
+
+        services.AddScoped<ManageSitesUseCase>();
+        services.AddScoped<CreateSiteCheckUseCase>();
+        services.AddScoped<PerformSiteCheckUseCase>();
+        services.AddScoped<ScheduleSiteChecksUseCase>();
 
         services
             .AddSiteCheckQueueService()

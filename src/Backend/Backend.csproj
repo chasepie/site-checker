@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <!-- RT0002: Application is intentionally empty until Step 5; reference will be used then -->
-    <NoWarn>$(NoWarn);RT0002</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
