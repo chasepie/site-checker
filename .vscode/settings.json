@@ -10,6 +10,7 @@
   "chat.useAgentSkills": true,
   "chat.mcp.gallery.enabled": true,
   "chat.tools.terminal.autoApprove": {
-    "dotnet test": true
+    "dotnet test": true,
+    "dotnet restore": true
   }
 }

@@ -1,0 +1,9 @@
+<Project Sdk="MSTest.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Domain\Domain.csproj" />
+  </ItemGroup>
+</Project>

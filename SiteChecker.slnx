@@ -6,6 +6,8 @@
   </Configurations>
   <Project Path="src/Domain/Domain.csproj" />
   <Project Path="src/Application/Application.csproj" />
+  <Project Path="test/Domain.Test/Domain.Test.csproj" />
+  <Project Path="test/Application.Test/Application.Test.csproj" />
   <Project Path="src/Backend/Backend.csproj" />
   <Project Path="src/Database/Database.csproj" />
   <Project Path="src/Scraper/Scraper.csproj" />

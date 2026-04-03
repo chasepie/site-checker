@@ -1,0 +1,11 @@
+<Project Sdk="MSTest.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Application\Application.csproj" />
+    <ProjectReference Include="..\..\src\Domain\Domain.csproj" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+</Project>
