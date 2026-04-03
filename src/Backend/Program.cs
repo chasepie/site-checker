@@ -9,7 +9,9 @@ using SiteChecker.Backend.Services.CheckQueue;
 using SiteChecker.Backend.Services.SignalR;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
+using SiteChecker.Database.Repositories;
 using SiteChecker.Database.Services;
+using SiteChecker.Domain.Ports;
 using SiteChecker.Backend.Notifiers.Discord;
 using SiteChecker.Backend.Notifiers.Pushover;
 using SiteChecker.Scraper;
@@ -81,6 +83,9 @@ public class Program
             });
 
         services.AddScraperServices();
+
+        services.AddScoped<ISiteRepository, SiteRepository>();
+        services.AddScoped<ISiteCheckRepository, SiteCheckRepository>();
 
         services
             .AddSiteCheckQueueService()
