@@ -1,37 +1,33 @@
-using Microsoft.EntityFrameworkCore;
-using SiteChecker.Database;
 using SiteChecker.Domain.Entities;
+using SiteChecker.Domain.Ports;
 using SiteChecker.Scraper.Scrapers;
 
 namespace SiteChecker.Backend.Services;
 
-public class DataSeeder(SiteCheckerDbContext dbContext)
+public class DataSeeder(ISiteRepository siteRepository)
 {
-    private readonly SiteCheckerDbContext _dbContext = dbContext;
-
     public async Task SeedDataAsync(CancellationToken cancellationToken = default)
     {
-        List<Site> sites = [
+        List<Site> seeds = [
             piaSite,
             botDetectionSite,
         ];
 
-        foreach (var site in sites)
+        var existing = await siteRepository.GetAllAsync(cancellationToken);
+
+        foreach (var seed in seeds)
         {
-            var exists = await _dbContext.Sites.AnyAsync(
-                s => s.ScraperId == site.ScraperId,
-                cancellationToken);
-            if (!exists)
+            if (!existing.Any(s => s.ScraperId == seed.ScraperId))
             {
-                await _dbContext.Sites.AddAsync(site, cancellationToken);
+                await siteRepository.AddAsync(seed, cancellationToken);
             }
         }
 
-        var scraperIds = sites.Select(s => s.ScraperId);
-        var toRemove = _dbContext.Sites.Where(s => !scraperIds.Contains(s.ScraperId));
-        _dbContext.Sites.RemoveRange(toRemove);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        var scraperIds = seeds.Select(s => s.ScraperId).ToHashSet();
+        foreach (var site in existing.Where(s => !scraperIds.Contains(s.ScraperId)))
+        {
+            await siteRepository.RemoveAsync(site, cancellationToken);
+        }
     }
 
     private readonly Site piaSite = new()

@@ -168,6 +168,7 @@ public class Program
         var dbContext = services.GetRequiredService<SiteCheckerDbContext>();
         await dbContext.Database.MigrateAsync();
 
-        await new DataSeeder(dbContext).SeedDataAsync();
+        var siteRepository = services.GetRequiredService<ISiteRepository>();
+        await new DataSeeder(siteRepository).SeedDataAsync();
     }
 }
