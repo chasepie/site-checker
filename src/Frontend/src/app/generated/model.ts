@@ -23,6 +23,27 @@ export const PushoverPriority = z.enum([
 	"Low",
 ]);
 
+export const DiscordConfig = z.object({
+	successEnabled: z.boolean(),
+	failureEnabled: z.boolean(),
+	channelId: z.string().nullable(),
+});
+export type DiscordConfig = z.infer<typeof DiscordConfig>;
+
+export const PushoverConfig = z.object({
+	successPriority: PushoverPriority.nullable(),
+	failurePriority: PushoverPriority.nullable(),
+});
+export type PushoverConfig = z.infer<typeof PushoverConfig>;
+
+export const SiteSchedule = z.object({
+	enabled: z.boolean(),
+	start: z.string().nullable(),
+	end: z.string().nullable(),
+	interval: z.number().nullable(),
+});
+export type SiteSchedule = z.infer<typeof SiteSchedule>;
+
 export function PagedResponse<T extends z.ZodType>(itemSchema: T) {
 	return z.object({
 		items: z.array(itemSchema),
@@ -70,27 +91,6 @@ export const PiaLocation = z.object({
 	excluded: z.boolean(),
 });
 export type PiaLocation = z.infer<typeof PiaLocation>;
-
-export const DiscordConfig = z.object({
-	successEnabled: z.boolean(),
-	failureEnabled: z.boolean(),
-	channelId: z.string().nullable(),
-});
-export type DiscordConfig = z.infer<typeof DiscordConfig>;
-
-export const PushoverConfig = z.object({
-	successPriority: PushoverPriority.nullable(),
-	failurePriority: PushoverPriority.nullable(),
-});
-export type PushoverConfig = z.infer<typeof PushoverConfig>;
-
-export const SiteSchedule = z.object({
-	enabled: z.boolean(),
-	start: z.string().nullable(),
-	end: z.string().nullable(),
-	interval: z.number().nullable(),
-});
-export type SiteSchedule = z.infer<typeof SiteSchedule>;
 
 export const SiteUpdate = IEntityWithId.extend({
 	name: z.string(),

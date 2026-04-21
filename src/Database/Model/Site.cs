@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Domain.Common;
+using SiteChecker.Domain.Sites;
 
 namespace SiteChecker.Database.Model;
 
@@ -39,21 +40,5 @@ public class Site : SiteUpdate
         Schedule.Update(update.Schedule);
         PushoverConfig.Update(update.PushoverConfig);
         DiscordConfig.Update(update.DiscordConfig);
-    }
-}
-
-public class SiteSchedule
-{
-    public bool Enabled { get; set; } = false;
-    public TimeOnly? Start { get; set; } = null;
-    public TimeOnly? End { get; set; } = null;
-    public uint? Interval { get; set; } = null;
-
-    public void Update(SiteSchedule schedule)
-    {
-        Enabled = schedule.Enabled;
-        Start = schedule.Start;
-        End = schedule.End;
-        Interval = schedule.Interval;
     }
 }

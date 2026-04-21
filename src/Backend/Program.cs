@@ -49,6 +49,7 @@ public class Program
             options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
             options.Converters.Add(new DateTimeConverter());
             options.Converters.Add(new JsonStringEnumConverter());
+            options.Converters.Add(new ULongStringConverter());
         }
 
         // Add services to the container.

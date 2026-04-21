@@ -1,6 +1,4 @@
-using SiteChecker.Domain.Sites;
-
-namespace SiteChecker.Database.Model;
+namespace SiteChecker.Domain.Sites;
 
 public class PushoverConfig
 {
