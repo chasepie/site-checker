@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <NoWarn>$(NoWarn);RT0002</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Domain/Domain.csproj" />
+    <ProjectReference Include="../Application/Application.csproj" />
     <ProjectReference Include="../Database/Database.csproj" />
     <ProjectReference Include="../Frontend/Frontend.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
