@@ -11,16 +11,10 @@ using SiteChecker.Scraper.Scrapers;
 
 namespace SiteChecker.Scraper;
 
-public interface IScraperService
-{
-    Task<IScrapeResult> ScrapeContentAsync(ScrapeRequest request);
-    BrowserType GetBrowserType(bool useVpn);
-}
-
 public partial class ScraperService(
     IEnumerable<IScraper> scrapers,
     IConfiguration config,
-    ILogger<ScraperService> logger) : IScraperService, IScrapingService
+    ILogger<ScraperService> logger) : IScrapingService
 {
     public const string BrowserlessUrlKey = "BROWSERLESS_URL";
     public const string BrowserlessUrlVpnKey = "BROWSERLESS_URL_VPN";
@@ -110,24 +104,6 @@ public partial class ScraperService(
         }
     }
 
-    public async Task<IScrapeResult> ScrapeContentAsync(ScrapeRequest request)
-    {
-        try
-        {
-            return await RunScraperAsync(request);
-        }
-        catch (Exception ex)
-        {
-            if (ex is not ScraperException scraperEx)
-            {
-                scraperEx = new UnexpectedScraperException($"An unexpected error occurred during scraping ({nameof(ScraperService)})", ex);
-            }
-
-            request.LogError(_logger, "Scraper Failed", scraperEx);
-            return FailureScrapeResult.FromException(scraperEx);
-        }
-    }
-
     public BrowserType GetBrowserType(bool useVpn)
     {
         if (bool.TryParse(_config[UseLocalBrowserKey], out var useLocal) && useLocal)
@@ -150,7 +126,7 @@ public partial class ScraperService(
         return BrowserType.Local;
     }
 
-    public Task<IScrapeResult> ScrapeAsync(Site site, SiteCheck siteCheck, CancellationToken cancellationToken = default)
+    public async Task<IScrapeResult> ScrapeAsync(Site site, SiteCheck siteCheck, CancellationToken cancellationToken = default)
     {
         var request = new ScrapeRequest
         {
@@ -159,7 +135,21 @@ public partial class ScraperService(
             BrowserType = GetBrowserType(site.UseVpn),
             AlwaysTakeScreenshot = site.AlwaysTakeScreenshot,
         };
-        return ScrapeContentAsync(request);
+
+        try
+        {
+            return await RunScraperAsync(request);
+        }
+        catch (Exception ex)
+        {
+            if (ex is not ScraperException scraperEx)
+            {
+                scraperEx = new UnexpectedScraperException($"An unexpected error occurred during scraping ({nameof(ScraperService)})", ex);
+            }
+
+            request.LogError(_logger, "Scraper Failed", scraperEx);
+            return FailureScrapeResult.FromException(scraperEx);
+        }
     }
 }
 
@@ -170,9 +160,7 @@ public static class ScraperServiceExtensions
         public IServiceCollection AddScraperServices()
         {
             return services
-                .AddSingleton<ScraperService>()
-                .AddSingleton<IScraperService>(sp => sp.GetRequiredService<ScraperService>())
-                .AddSingleton<IScrapingService>(sp => sp.GetRequiredService<ScraperService>())
+                .AddSingleton<IScrapingService, ScraperService>()
                 .AddScraper<PiaLocationScraper>()
                 .AddScraper<BotDetectionScraper>();
         }

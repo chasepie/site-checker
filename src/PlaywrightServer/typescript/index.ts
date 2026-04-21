@@ -17,9 +17,7 @@ async function launchServer() {
 
   const options = {
     headless: false,
-    ignoreDefaultArgs: [
-      '--enable-automation',
-    ],
+    ignoreDefaultArgs: ['--enable-automation'],
     port: 3123,
     wsPath: 'playwright',
     cdpPort: await findFreePort(),

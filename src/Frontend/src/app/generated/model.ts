@@ -85,10 +85,6 @@ export const SiteCheck = IEntityWithId.extend({
 	startDate: z.string(),
 	doneDate: z.string().nullable(),
 	siteId: z.number(),
-	metadata: z.array(z.string()),
-	isSuccess: z.boolean(),
-	isComplete: z.boolean(),
-	isKnownFailure: z.boolean(),
 });
 export type SiteCheck = z.infer<typeof SiteCheck>;
 

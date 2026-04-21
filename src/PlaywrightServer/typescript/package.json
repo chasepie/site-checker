@@ -1,18 +1,18 @@
 {
-  "name": "local-playwright",
+  "name": "playwright-server",
   "version": "1.0.0",
   "description": "",
   "license": "ISC",
   "author": "",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
-    "start": "npm install && tsx index.ts"
+    "start": "tsx index.ts"
   },
   "devDependencies": {
-    "@types/node": "^24.12.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "@types/node": "24.12.2",
+    "tsx": "4.21.0",
+    "typescript": "6.0.2"
   },
   "dependencies": {
     "playwright": "1.58.2"

@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Domain/Domain.csproj" />
+  </ItemGroup>
+
+  <Target Name="BuildPlaywrightServer" BeforeTargets="Build">
+    <Exec Command="npm install" Condition="!Exists('node_modules')" WorkingDirectory="typescript" />
+
+    <ItemGroup>
+      <_TypeScriptFiles Include="typescript\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_TypeScriptFiles)" DestinationFolder="$(OutDir)typescript\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

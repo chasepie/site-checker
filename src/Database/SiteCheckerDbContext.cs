@@ -1,43 +1,15 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Domain.Entities;
-using SiteChecker.Utilities;
 
 namespace SiteChecker.Database;
 
-public class SiteCheckerDbContext : DbContext
+public class SiteCheckerDbContext(DbContextOptions<SiteCheckerDbContext> options)
+    : DbContext(options)
 {
     public DbSet<Site> Sites { get; set; }
     public DbSet<SiteCheck> SiteChecks { get; set; }
     public DbSet<SiteCheckScreenshot> SiteCheckScreenshots { get; set; }
-
-    private readonly string _dbPath;
-
-    public SiteCheckerDbContext()
-    {
-        string dbDir;
-
-        if (!EnvironmentUtils.IsDockerContainer()
-            && RepoUtils.TryGetRepoDirectory(out var repoRoot))
-        {
-            dbDir = Path.Join(repoRoot, "site-checker/data");
-        }
-        else
-        {
-            dbDir = Path.Join(AppContext.BaseDirectory, "data");
-        }
-
-        if (!Directory.Exists(dbDir))
-        {
-            Directory.CreateDirectory(dbDir);
-        }
-        _dbPath = Path.Join(dbDir, "SiteChecker.db");
-    }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
-    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -19,6 +19,8 @@ using SiteChecker.Backend.Notifiers.Discord;
 using SiteChecker.Backend.Notifiers.Pushover;
 using SiteChecker.Scraper;
 using SiteChecker.Backend.Extensions;
+using SiteChecker.Utilities;
+using SiteChecker.PlaywrightServer;
 
 namespace SiteChecker.Backend;
 
@@ -76,12 +78,21 @@ public class Program
             });
 
         services
-            .AddDbContext<SiteCheckerDbContext>(o =>
+            .AddDbContext<SiteCheckerDbContext>((sp, options) =>
             {
+                var dbDir = GetDbDataDirectory();
+                if (!dbDir.Exists)
+                {
+                    dbDir.Create();
+                }
+
+                var dbPath = Path.Join(dbDir.FullName, "SiteChecker.db");
+                options.UseSqlite($"Data Source={dbPath}");
+
                 if (environment.IsDevelopment())
                 {
-                    o.EnableDetailedErrors();
-                    o.EnableSensitiveDataLogging();
+                    options.EnableDetailedErrors();
+                    options.EnableSensitiveDataLogging();
                 }
             });
 
@@ -115,11 +126,15 @@ public class Program
         // Notification handler — fires notifications when a SiteCheck reaches a terminal state
         services.AddScoped<IDomainEventHandler<EntityUpdatedEvent<SiteCheck>>, NotificationEventHandler>();
 
+        // Browser server
+        services.AddScoped<IBrowserServer, PlaywrightBrowserServer>();
+
         services.AddScoped<ManageSitesUseCase>();
         services.AddScoped<CreateSiteCheckUseCase>();
         services.AddScoped<PerformSiteCheckUseCase>();
         services.AddScoped<ScheduleSiteChecksUseCase>();
         services.AddScoped<NotifyCheckCompletedUseCase>();
+        services.AddScoped<BrowserServerUseCase>();
 
         services
             .AddSiteCheckQueueService()
@@ -170,5 +185,22 @@ public class Program
 
         var siteRepository = services.GetRequiredService<ISiteRepository>();
         await new DataSeeder(siteRepository).SeedDataAsync();
+    }
+
+    private static DirectoryInfo GetDbDataDirectory()
+    {
+        string dataDir;
+
+        if (!EnvironmentUtils.IsDockerContainer()
+            && RepoUtils.TryGetRepoDirectory(out var repoRoot))
+        {
+            dataDir = Path.Join(repoRoot, "site-checker/data");
+        }
+        else
+        {
+            dataDir = Path.Join(AppContext.BaseDirectory, "data");
+        }
+
+        return new DirectoryInfo(dataDir);
     }
 }

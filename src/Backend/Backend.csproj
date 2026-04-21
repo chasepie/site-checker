@@ -29,6 +29,7 @@
     <ProjectReference Include="../Frontend/Frontend.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
+    <ProjectReference Include="../PlaywrightServer/PlaywrightServer.csproj" />
     <ProjectReference Include="../Scraper/Scraper.csproj" />
   </ItemGroup>
 

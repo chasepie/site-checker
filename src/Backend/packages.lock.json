@@ -790,12 +790,17 @@
         "type": "Project",
         "dependencies": {
           "Domain": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.5, )",
-          "Utilities": "[1.0.0, )"
+          "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.5, )"
         }
       },
       "domain": {
         "type": "Project"
+      },
+      "playwrightserver": {
+        "type": "Project",
+        "dependencies": {
+          "Domain": "[1.0.0, )"
+        }
       },
       "scraper": {
         "type": "Project",

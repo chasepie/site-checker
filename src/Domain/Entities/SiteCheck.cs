@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using SiteChecker.Domain.Enums;
 using SiteChecker.Domain.Exceptions;
 
@@ -21,16 +22,22 @@ public class SiteCheck : IEntityWithId
 
     public required int SiteId { get; set; }
 
+    public BrowserType? BrowserType { get; set; }
+
+    [JsonIgnore]
     public Dictionary<string, string> Metadata { get; set; } = [];
 
+    [JsonIgnore]
     public bool IsSuccess => Status == CheckStatus.Done;
 
+    [JsonIgnore]
     public bool IsComplete => Status == CheckStatus.Failed || Status == CheckStatus.Done;
 
     /// <summary>
     /// True when the check failed due to a known/expected exception type (e.g. access denied, blank page).
     /// Known failures do not trigger notifications.
     /// </summary>
+    [JsonIgnore]
     public bool IsKnownFailure
     {
         get
