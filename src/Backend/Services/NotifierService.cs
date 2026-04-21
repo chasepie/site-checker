@@ -6,6 +6,7 @@ using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
 using SiteChecker.Backend.Notifiers.Discord;
 using SiteChecker.Backend.Notifiers.Pushover;
+using SiteChecker.Domain.SiteChecks;
 using SiteChecker.Scraper;
 
 namespace SiteChecker.Backend.Services;

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
+using SiteChecker.Domain.Common;
 
 namespace SiteChecker.Database;
 

@@ -33,17 +33,50 @@ export function PagedResponse<T extends z.ZodType>(itemSchema: T) {
 }
 export type PagedResponse<T extends z.ZodType> = z.infer<ReturnType<typeof PagedResponse<T>>>;
 
+export const IEntityWithId = z.object({
+	id: z.number(),
+});
+export type IEntityWithId = z.infer<typeof IEntityWithId>;
+
+export const IEntityChange = z.object({
+	entityTypeName: z.string(),
+	entityId: z.number(),
+});
+export type IEntityChange = z.infer<typeof IEntityChange>;
+
+export const EntityChange = IEntityChange.extend({
+});
+export type EntityChange = z.infer<typeof EntityChange>;
+
+export const CreatedEntityChange = EntityChange.extend({
+	entity: z.unknown(),
+});
+export type CreatedEntityChange = z.infer<typeof CreatedEntityChange>;
+
+export const UpdatedEntityChange = EntityChange.extend({
+	oldEntity: z.unknown(),
+	newEntity: z.unknown(),
+});
+export type UpdatedEntityChange = z.infer<typeof UpdatedEntityChange>;
+
+export const DeletedEntityChange = EntityChange.extend({
+});
+export type DeletedEntityChange = z.infer<typeof DeletedEntityChange>;
+
+export const PiaLocation = z.object({
+	name: z.string(),
+	id: z.string(),
+	portForward: z.boolean(),
+	excluded: z.boolean(),
+});
+export type PiaLocation = z.infer<typeof PiaLocation>;
+
 export const DiscordConfig = z.object({
 	successEnabled: z.boolean(),
 	failureEnabled: z.boolean(),
 	channelId: z.string().nullable(),
 });
 export type DiscordConfig = z.infer<typeof DiscordConfig>;
-
-export const IEntityWithId = z.object({
-	id: z.number(),
-});
-export type IEntityWithId = z.infer<typeof IEntityWithId>;
 
 export const PushoverConfig = z.object({
 	successPriority: PushoverPriority.nullable(),
@@ -92,39 +125,6 @@ export const SiteCheckScreenshot = IEntityWithId.extend({
 	siteCheckId: z.number(),
 });
 export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
-
-export const IEntityChange = z.object({
-	entityTypeName: z.string(),
-	entityId: z.number(),
-});
-export type IEntityChange = z.infer<typeof IEntityChange>;
-
-export const EntityChange = IEntityChange.extend({
-});
-export type EntityChange = z.infer<typeof EntityChange>;
-
-export const CreatedEntityChange = EntityChange.extend({
-	entity: z.unknown(),
-});
-export type CreatedEntityChange = z.infer<typeof CreatedEntityChange>;
-
-export const UpdatedEntityChange = EntityChange.extend({
-	oldEntity: z.unknown(),
-	newEntity: z.unknown(),
-});
-export type UpdatedEntityChange = z.infer<typeof UpdatedEntityChange>;
-
-export const DeletedEntityChange = EntityChange.extend({
-});
-export type DeletedEntityChange = z.infer<typeof DeletedEntityChange>;
-
-export const PiaLocation = z.object({
-	name: z.string(),
-	id: z.string(),
-	portForward: z.boolean(),
-	excluded: z.boolean(),
-});
-export type PiaLocation = z.infer<typeof PiaLocation>;
 
 @Injectable({ providedIn: 'root'}) export class SiteCheckController
 {

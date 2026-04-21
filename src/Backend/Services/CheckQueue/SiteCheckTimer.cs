@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Database;
 using SiteChecker.Database.Model;
+using SiteChecker.Domain.SiteChecks;
 
 namespace SiteChecker.Backend.Services.CheckQueue;
 

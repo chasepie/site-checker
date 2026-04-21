@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using NetCord.Rest;
 using SiteChecker.Database.Model;
 using SiteChecker.Backend.Notifiers.Pushover;
+using SiteChecker.Domain.SiteChecks;
 using SiteChecker.Scraper;
 using SiteChecker.Scraper.Exceptions;
 

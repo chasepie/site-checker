@@ -4,6 +4,9 @@ using Reinforced.Typings.Fluent;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
+using SiteChecker.Domain.Common;
+using SiteChecker.Domain.SiteChecks;
+using SiteChecker.Domain.Sites;
 
 namespace SiteChecker.Backend.Generators;
 

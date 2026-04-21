@@ -4,6 +4,7 @@ using SiteChecker.Backend.Extensions;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
 using SiteChecker.Database.Model;
+using SiteChecker.Domain.SiteChecks;
 using SiteChecker.Scraper;
 
 namespace SiteChecker.Backend.Services.CheckQueue;

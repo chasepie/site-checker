@@ -2,17 +2,10 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using SiteChecker.Domain.Common;
+using SiteChecker.Domain.SiteChecks;
 
 namespace SiteChecker.Database.Model;
-
-public enum CheckStatus
-{
-    Created,
-    Queued,
-    Checking,
-    Done,
-    Failed
-}
 
 public class SiteCheck : IEntityWithId
 {

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
+using SiteChecker.Domain.Common;
 
 namespace SiteChecker.Database.Model;
 

@@ -312,6 +312,9 @@
           "System.Composition.Runtime": "9.0.0"
         }
       },
+      "domain": {
+        "type": "Project"
+      },
       "utilities": {
         "type": "Project"
       },
