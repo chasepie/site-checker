@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "tags": [
+    "-lintignore"
+  ],
+  "ignoreDependencies": [
+    "bootstrap-icons"
+  ],
+  "ignoreIssues": {
+    "src/app/generated/**/*.ts": [
+      "exports"
+    ],
+    "src/proxy.conf.js": [
+      "files"
+    ]
+  }
+}
