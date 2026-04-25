@@ -17,12 +17,15 @@ export const SiteCheckStore = signalStore(
   { providedIn: 'root' },
   withCrudEntities<SiteCheck>('SiteCheck', SiteCheck),
 
-  withState({
+  withState<{
+    _getAllFilter: SiteCheckFilter;
+    _totalItemCounts: Record<number, number>;
+  }>({
     _getAllFilter: {
       pageNumber: 0,
       pageSize: 10,
-      siteId: undefined as number | undefined,
-    } satisfies SiteCheckFilter,
+      siteId: undefined,
+    },
     _totalItemCounts: {},
   }),
 
