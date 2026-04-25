@@ -13,7 +13,7 @@ export const SiteStore = signalStore(
 
   withState({
     _selectedSiteId: undefined as number | undefined,
-    _totalCounts: {} as Record<Site['id'], number>,
+    _totalCounts: {},
   }),
 
   withProps(() => ({

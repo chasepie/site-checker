@@ -21,9 +21,9 @@ export const SiteCheckStore = signalStore(
     _getAllFilter: {
       pageNumber: 0,
       pageSize: 10,
-      siteId: undefined,
-    } satisfies SiteCheckFilter as SiteCheckFilter,
-    _totalItemCounts: {} as Record<Site['id'], number>,
+      siteId: undefined as number | undefined,
+    } satisfies SiteCheckFilter,
+    _totalItemCounts: {},
   }),
 
   withProps(store => {
@@ -93,7 +93,7 @@ export const SiteCheckStore = signalStore(
             continue;
           }
 
-          let delta = 0;
+          let delta: number;
           if (operation === 'add') {
             const newItems = group.filter(e => !state.ids.includes(e.id));
             delta = newItems.length;
