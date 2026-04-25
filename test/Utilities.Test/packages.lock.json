@@ -45,9 +45,9 @@
       },
       "ReferenceTrimmer": {
         "type": "Direct",
-        "requested": "[3.4.5, )",
-        "resolved": "3.4.5",
-        "contentHash": "I3vQerUFZ3BSrPfdpAUZX+OIEj9rf/BZ0p/Dc+KlygFHsGa3zekygNhqoPOP6/p06ql1lAcGmrqJGpsLOb6Yfw=="
+        "requested": "[3.5.1, )",
+        "resolved": "3.5.1",
+        "contentHash": "C6QtR9syjnqQAQlVBCQHcL7aszJ2vQUK8RZt/hettCfBhbuDp+6hL0+XFvT5G4iQUk2YaLfUCVuLvPzKmfqtfw=="
       },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
