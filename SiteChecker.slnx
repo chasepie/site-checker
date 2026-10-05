@@ -8,6 +8,7 @@
   <Project Path="src/Database/Database.csproj" />
   <Project Path="src/Scraper/Scraper.csproj" />
   <Project Path="src/Utilities/Utilities.csproj" />
+  <Project Path="test/Backend.Test/Backend.Test.csproj" />
   <Project Path="test/Scraper.Test/Scraper.Test.csproj" />
   <Project Path="test/Utilities.Test/Utilities.Test.csproj" />
   <Project Path="src/Frontend/Frontend.esproj">

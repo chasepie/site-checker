@@ -7,11 +7,11 @@ namespace SiteChecker.Database.Model;
 
 public enum CheckStatus
 {
-    Created,
-    Queued,
-    Checking,
-    Done,
-    Failed
+    // Values are pinned because they are persisted; 0 was the retired "Created" status.
+    Queued = 1,
+    Checking = 2,
+    Done = 3,
+    Failed = 4,
 }
 
 public class SiteCheck : IEntityWithId
@@ -22,7 +22,7 @@ public class SiteCheck : IEntityWithId
 
     public string? VpnLocationId { get; set; }
 
-    public CheckStatus Status { get; set; } = CheckStatus.Created;
+    public CheckStatus Status { get; set; } = CheckStatus.Queued;
 
     public required DateTime StartDate { get; set; }
 
@@ -51,11 +51,11 @@ public class SiteCheck : IEntityWithId
     public SiteCheck() { }
 
     [SetsRequiredMembers]
-    public SiteCheck(Site site)
+    public SiteCheck(Site site, DateTime startDate)
     {
         SiteId = site.Id;
-        Status = CheckStatus.Created;
-        StartDate = DateTime.UtcNow;
+        Status = CheckStatus.Queued;
+        StartDate = startDate;
     }
 
     public void Update(Exception ex)
