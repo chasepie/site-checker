@@ -14,6 +14,8 @@ public enum CheckStatus
     Failed = 4,
 }
 
+// Serves the Site Check queue: the oldest Queued check (by StartDate, then Id) is claimed next.
+[Index(nameof(Status), nameof(StartDate))]
 public class SiteCheck : IEntityWithId
 {
     public required int Id { get; set; }

@@ -13,14 +13,12 @@ public class SiteCheckQueueProcessor(
     private readonly ILogger<SiteCheckQueueProcessor> _logger = logger;
 
     /// <summary>
-    /// Re-queues interrupted checks, then runs Queued checks until the service is stopped.
+    /// Runs Queued checks until the service is stopped.
     /// </summary>
     /// <param name="stoppingToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await _runner.RecoverAsync(stoppingToken);
-
         while (!stoppingToken.IsCancellationRequested)
         {
             bool ranCheck;

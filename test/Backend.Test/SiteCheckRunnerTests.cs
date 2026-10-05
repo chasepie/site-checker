@@ -287,7 +287,65 @@ public sealed class SiteCheckRunnerTests
     // ---- Recovery ----
 
     [TestMethod]
-    public async Task Recover_RequeuesCheckingChecks_AndLeavesCompleteChecksAlone()
+    public async Task RunNext_RerunsCheck_WhenRecordingItsFailureFailed()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await harness.Runner.RequestCheckAsync(site.Id, Ct);
+        harness.Scraper.OnScrape = _ => throw new InvalidOperationException("browser exploded");
+        harness.SaveFaults.FailNextSaveWhen = dbContext => dbContext.ChangeTracker
+            .Entries<SiteCheck>()
+            .Any(e => e.State == EntityState.Modified && e.Entity.Status == CheckStatus.Failed);
+
+        // The database rejects the Failed save, so the outcome can't be recorded.
+        await Assert.ThrowsAsync<DbUpdateException>(() => harness.Runner.RunNextAsync(Ct));
+
+        // Without a restart, the Site recovers: the stuck check is re-run.
+        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(
+            new SuccessScrapeResult { Content = "recovered" });
+        Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
+
+        var check = Assert.ContainsSingle(await harness.GetChecksAsync(site.Id, Ct));
+        Assert.AreEqual(CheckStatus.Done, check.Status);
+        Assert.AreEqual("recovered", check.Value);
+    }
+
+    [TestMethod]
+    public async Task RunNext_BroadcastsChecking_BeforeScraping_WhenRerunningInterruptedCheck()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        int interruptedId;
+        // Left Checking by a previous run, already holding the location this run will resolve.
+        await using (var dbContext = harness.CreateDbContext())
+        {
+            var interrupted = new SiteCheck(site, harness.Time.GetUtcNow().UtcDateTime)
+            {
+                Status = CheckStatus.Checking,
+                VpnLocationId = "No VPN",
+            };
+            dbContext.SiteChecks.Add(interrupted);
+            await dbContext.SaveChangesAsync(Ct);
+            interruptedId = interrupted.Id;
+        }
+
+        IReadOnlyList<(int SiteCheckId, CheckStatus Status)>? broadcastBeforeScrape = null;
+        harness.Scraper.OnScrape = _ =>
+        {
+            broadcastBeforeScrape = harness.Broadcasts.SiteCheckUpdates;
+            return Task.FromResult<IScrapeResult>(new SuccessScrapeResult { Content = "content" });
+        };
+
+        Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
+
+        Assert.IsNotNull(broadcastBeforeScrape);
+        CollectionAssert.Contains(
+            broadcastBeforeScrape.ToList(),
+            (interruptedId, CheckStatus.Checking));
+    }
+
+    [TestMethod]
+    public async Task RunNext_RerunsInterruptedChecks_AndLeavesCompleteChecksAlone()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
@@ -302,12 +360,16 @@ public sealed class SiteCheckRunnerTests
             await dbContext.SaveChangesAsync(Ct);
         }
 
-        await harness.Runner.RecoverAsync(Ct);
+        Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
 
-        var statuses = (await harness.GetChecksAsync(site.Id, Ct)).Select(c => c.Status).ToList();
+        var checks = await harness.GetChecksAsync(site.Id, Ct);
         CollectionAssert.AreEqual(
-            new[] { CheckStatus.Done, CheckStatus.Failed, CheckStatus.Queued },
-            statuses);
+            new[] { CheckStatus.Done, CheckStatus.Failed, CheckStatus.Done },
+            checks.Select(c => c.Status).ToList());
+        Assert.AreEqual("done", checks[0].Value);
+        Assert.AreEqual("failed", checks[1].Value);
+        Assert.AreEqual("content", checks[2].Value);
+        Assert.HasCount(1, harness.Scraper.Requests);
     }
 
     [TestMethod]
@@ -335,7 +397,6 @@ public sealed class SiteCheckRunnerTests
         harness.Time.Advance(TimeSpan.FromMinutes(1));
         harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(
             new SuccessScrapeResult { Content = "after restart" });
-        await harness.Runner.RecoverAsync(Ct);
         await harness.Runner.QueueDueChecksAsync(Ct);
 
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));

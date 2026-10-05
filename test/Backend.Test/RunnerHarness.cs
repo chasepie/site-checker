@@ -2,6 +2,7 @@ namespace SiteChecker.Backend.Test;
 
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
@@ -9,12 +10,15 @@ using SiteChecker.Backend.Services.CheckQueue;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
 using SiteChecker.Database.Model;
+using SiteChecker.Database.Services;
 using SiteChecker.Scraper;
 
 /// <summary>
 /// Hosts a <see cref="SiteCheckRunner"/> over a migrated in-memory SQLite database, with a fake
 /// clock and a fake scraper. The database outlives <see cref="RestartAsync"/>, so a test can
-/// simulate the app restarting.
+/// simulate the app restarting. Only the runner's saves are recorded in <see cref="Broadcasts"/>
+/// and can be failed with <see cref="SaveFaults"/>; saves through <see cref="CreateDbContext"/>
+/// (test setup and assertions) are not.
 /// </summary>
 internal sealed class RunnerHarness : IAsyncDisposable
 {
@@ -37,6 +41,8 @@ internal sealed class RunnerHarness : IAsyncDisposable
 
     public FakeTimeProvider Time { get; }
     public FakeScraperService Scraper { get; } = new();
+    public RecordingEntityChangeService Broadcasts { get; } = new();
+    public SaveFaultInterceptor SaveFaults { get; } = new();
     public SiteCheckRunner Runner { get; private set; }
 
     private RunnerHarness(SqliteConnection connection, FakeTimeProvider time)
@@ -76,7 +82,10 @@ internal sealed class RunnerHarness : IAsyncDisposable
             .AddSingleton<TimeProvider>(Time)
             .AddSingleton<IScraperService>(Scraper)
             .AddSingleton<PiaService>()
-            .AddDbContext<SiteCheckerDbContext>(o => o.UseSqlite(_connection))
+            .AddSingleton<IEntityChangeService>(Broadcasts)
+            .AddDbContext<SiteCheckerDbContext>(o => o
+                .UseSqlite(_connection)
+                .AddInterceptors(SaveFaults))
             .AddSingleton<SiteCheckRunner>()
             .BuildServiceProvider(validateScopes: true);
     }
@@ -150,4 +159,67 @@ internal sealed class FakeScraperService : IScraperService
     }
 
     public BrowserType GetBrowserType(bool useVpn) => BrowserType.Browserless;
+}
+
+/// <summary>
+/// Records the Site Check status changes the save interceptor would broadcast to clients.
+/// </summary>
+internal sealed class RecordingEntityChangeService : IEntityChangeService
+{
+    private readonly List<(int SiteCheckId, CheckStatus Status)> _updates = [];
+    private readonly Lock _lock = new();
+
+    /// <summary>
+    /// A snapshot of every Site Check update broadcast so far, with the status at broadcast time.
+    /// </summary>
+    public IReadOnlyList<(int SiteCheckId, CheckStatus Status)> SiteCheckUpdates
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _updates];
+            }
+        }
+    }
+
+    public Task OnEntityCreated(CreatedEntityChange change, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task OnEntityUpdated(UpdatedEntityChange change, CancellationToken cancellationToken = default)
+    {
+        if (change.NewEntity is SiteCheck siteCheck)
+        {
+            lock (_lock)
+            {
+                _updates.Add((siteCheck.Id, siteCheck.Status));
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task OnEntityDeleted(DeletedEntityChange change, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+}
+
+/// <summary>
+/// Fails the next save that matches <see cref="FailNextSaveWhen"/>, before anything is written.
+/// </summary>
+internal sealed class SaveFaultInterceptor : SaveChangesInterceptor
+{
+    public Func<DbContext, bool>? FailNextSaveWhen { get; set; }
+
+    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+        DbContextEventData eventData,
+        InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        var failWhen = FailNextSaveWhen;
+        if (failWhen != null && eventData.Context != null && failWhen(eventData.Context))
+        {
+            FailNextSaveWhen = null;
+            throw new DbUpdateException("Injected save failure");
+        }
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
 }

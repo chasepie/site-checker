@@ -210,13 +210,17 @@ public sealed class SiteCheckRunner : IDisposable
     }
 
     /// <summary>
-    /// Claims the oldest Queued Site Check and runs it to Done or Failed. Never throws for a
-    /// failed Site Check; the failure is recorded on the Site Check instead.
+    /// Re-queues orphaned Site Checks, then claims the oldest Queued Site Check and runs it to
+    /// Done or Failed. A failed Site Check is recorded on the Site Check, not thrown; this only
+    /// throws when the database itself fails, in which case the caller should wait before
+    /// calling again.
     /// </summary>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns><c>true</c> if a Site Check was run; <c>false</c> if none was Queued.</returns>
     public async Task<bool> RunNextAsync(CancellationToken cancellationToken)
     {
+        await RequeueOrphanedChecksAsync(cancellationToken);
+
         var siteCheckId = await ClaimNextAsync(cancellationToken);
         if (siteCheckId == null)
         {
@@ -229,42 +233,13 @@ public sealed class SiteCheckRunner : IDisposable
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // If shutdown cancels the check instead, it stays Checking and RecoverAsync
-            // re-queues it on the next start.
+            // If shutdown cancels the check instead, it stays Checking and is re-queued as an
+            // orphan the next time the runner looks for work.
             _logger.LogError(ex, "Error occurred running Site Check {SiteCheckId}.", siteCheckId);
             await MarkFailedAsync(siteCheckId.Value, ex, cancellationToken);
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Re-queues Site Checks left Checking by a previous run of the app. Call once at startup,
-    /// before the first <see cref="RunNextAsync"/>.
-    /// </summary>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task that represents the asynchronous operation.</returns>
-    public async Task RecoverAsync(CancellationToken cancellationToken)
-    {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
-
-        var interrupted = await dbContext.SiteChecks
-            .Where(sc => sc.Status == CheckStatus.Checking)
-            .ToListAsync(cancellationToken);
-        if (interrupted.Count == 0)
-        {
-            return;
-        }
-
-        foreach (var siteCheck in interrupted)
-        {
-            siteCheck.Status = CheckStatus.Queued;
-        }
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation("Re-queued {Count} interrupted site check(s).", interrupted.Count);
-        Wake();
     }
 
     /// <summary>
@@ -303,6 +278,34 @@ public sealed class SiteCheckRunner : IDisposable
     }
 
     /// <summary>
+    /// Re-queues every Site Check left Checking. The runner runs one Site Check at a time and
+    /// only calls this between checks, so any Checking row is an orphan: interrupted by a restart,
+    /// or a check whose outcome couldn't be saved. Running checks in parallel would require
+    /// tracking which checks are in flight, so only true orphans are reset.
+    /// </summary>
+    private async Task RequeueOrphanedChecksAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
+
+        var orphaned = await dbContext.SiteChecks
+            .Where(sc => sc.Status == CheckStatus.Checking)
+            .ToListAsync(cancellationToken);
+        if (orphaned.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var siteCheck in orphaned)
+        {
+            siteCheck.Status = CheckStatus.Queued;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Re-queued {Count} orphaned site check(s).", orphaned.Count);
+    }
+
+    /// <summary>
     /// Moves the oldest Queued Site Check to Checking.
     /// </summary>
     /// <returns>The ID of the claimed Site Check, or <c>null</c> if none was Queued.</returns>
@@ -324,8 +327,8 @@ public sealed class SiteCheckRunner : IDisposable
                 return null;
             }
 
-            // Conditional so the claim stays correct if more than one worker ever runs. This
-            // bypasses the change interceptor; clients see Checking on the next save.
+            // Conditional so two workers could never claim the same check. This bypasses the
+            // change interceptor; PerformCheckAsync's pre-scrape save broadcasts Checking.
             var claimed = await dbContext.SiteChecks
                 .Where(sc => sc.Id == nextId && sc.Status == CheckStatus.Queued)
                 .ExecuteUpdateAsync(
@@ -358,6 +361,9 @@ public sealed class SiteCheckRunner : IDisposable
         // Save before scraping so clients receive a real-time status update via SignalR while the
         // (potentially long-running) scrape is in progress. An EF Core SaveChanges interceptor
         // hooks into every save and automatically broadcasts entity changes to all connected clients.
+        // The claim set Checking without the interceptor, and a re-run orphan may already hold this
+        // location, so force a tracked change to guarantee the broadcast.
+        dbContext.Entry(siteCheck).Property(sc => sc.Status).IsModified = true;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var request = new ScrapeRequest
@@ -382,31 +388,25 @@ public sealed class SiteCheckRunner : IDisposable
 
     /// <summary>
     /// Records a Site Check as Failed using a fresh DbContext, so that whatever broke the check
-    /// (including a failed save) doesn't also break recording the failure.
+    /// (including a failed save) doesn't also break recording the failure. If this save fails
+    /// too, the exception propagates and the check stays Checking until it is re-queued as an
+    /// orphan.
     /// </summary>
     private async Task MarkFailedAsync(int siteCheckId, Exception exception, CancellationToken cancellationToken)
     {
-        try
-        {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
 
-            var siteCheck = await dbContext.SiteChecks
-                .FirstOrDefaultAsync(sc => sc.Id == siteCheckId, cancellationToken);
-            if (siteCheck == null)
-            {
-                _logger.LogWarning("Site check with ID {SiteCheckId} no longer exists; not marking it failed.", siteCheckId);
-                return;
-            }
-
-            siteCheck.Update(exception);
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (Exception ex)
+        var siteCheck = await dbContext.SiteChecks
+            .FirstOrDefaultAsync(sc => sc.Id == siteCheckId, cancellationToken);
+        if (siteCheck == null)
         {
-            // Left Checking; RecoverAsync re-queues it on the next start.
-            _logger.LogError(ex, "Could not mark site check {SiteCheckId} as failed.", siteCheckId);
+            _logger.LogWarning("Site check with ID {SiteCheckId} no longer exists; not marking it failed.", siteCheckId);
+            return;
         }
+
+        siteCheck.Update(exception);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

@@ -46,10 +46,10 @@ Build notes:
 Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VPN, notifiers, code generators), `src/Database` (EF Core models, `SiteCheckerDbContext`, migrations, change interceptor), `src/Scraper` (Playwright scraping library), `src/Utilities`, `src/Frontend` (Angular SPA), and `src/LocalPlaywright` (a local Playwright server for development without Docker). Tests live in `test/`.
 
 ### Site Check lifecycle
-- `Services/CheckQueue/SiteCheckRunner` owns every Site Check status change: deciding which Sites are due by Schedule, accepting requests (`RequestCheckAsync` returns the Site's open check if one exists), claiming and running checks (Queued → Checking → Done/Failed), and re-queuing checks left `Checking` after a restart.
+- `Services/CheckQueue/SiteCheckRunner` owns every Site Check status change: deciding which Sites are due by Schedule, accepting requests (`RequestCheckAsync` returns the Site's open check if one exists), claiming and running checks (Queued → Checking → Done/Failed), and re-queuing orphaned `Checking` checks (after a restart or a failed save) each time it looks for work.
 - **The database is the queue** (ADR 0001): pending work is every Site Check with status `Queued`. The in-memory channel only wakes the runner and holds no state.
 - `SiteCheckTimer` and `SiteCheckQueueProcessor` are thin `BackgroundService` loops that call the runner. Keep logic out of them, and create or run Site Checks through the runner, never by writing `SiteCheck` rows directly.
-- Checks run one at a time, because rotating the VPN Location restarts the shared Browserless VPN container.
+- Checks run one at a time, because rotating the VPN Location restarts the shared Browserless VPN container. Orphan recovery depends on this: any `Checking` row found between checks is assumed abandoned.
 
 ### Save interceptor fan-out
 `Database/ChangesInterceptor` runs on every `SaveChanges` and passes the created, updated and deleted entities to each registered `IEntityChangeService`:
@@ -84,7 +84,7 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 
 ### Testing
 - Use MSTest v4 only (no xUnit, NUnit, or Jest). The MSTest analyzers run in `Recommended` mode with warnings as errors, so use the specific asserts (`Assert.HasCount`, `Assert.ContainsSingle`, `Assert.IsEmpty`) and pass `TestContext.CancellationToken`.
-- `test/Backend.Test` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. Extend the harness rather than mocking EF.
+- `test/Backend.Test` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, and `harness.SaveFaults` fails a chosen save. Extend the harness rather than mocking EF.
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.
