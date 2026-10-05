@@ -26,3 +26,6 @@ dotnet_diagnostic.CA1310.severity = none
 dotnet_diagnostic.CA1805.severity = none
 dotnet_diagnostic.CA1848.severity = none
 dotnet_diagnostic.CA1873.severity = none
+
+# IDE0005: Using directive is unnecessary.
+dotnet_diagnostic.IDE0005.severity = warning
