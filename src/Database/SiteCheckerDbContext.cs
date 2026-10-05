@@ -12,13 +12,31 @@ public class SiteCheckerDbContext : DbContext
     public DbSet<SiteCheck> SiteChecks { get; set; }
     public DbSet<SiteCheckScreenshot> SiteCheckScreenshots { get; set; }
 
-    private readonly string _dbPath;
     private readonly IEnumerable<IEntityChangeService> _entityUpdateServices;
 
+    /// <summary>
+    /// Used by design-time tooling (<c>dotnet ef</c>); connects to the default database file.
+    /// </summary>
     public SiteCheckerDbContext(
         IEnumerable<IEntityChangeService>? entityUpdateServices = null)
     {
         _entityUpdateServices = entityUpdateServices ?? [];
+    }
+
+    /// <summary>
+    /// Used by dependency injection. If <paramref name="options"/> configures no database
+    /// provider, the default database file is used.
+    /// </summary>
+    public SiteCheckerDbContext(
+        DbContextOptions<SiteCheckerDbContext> options,
+        IEnumerable<IEntityChangeService>? entityUpdateServices = null)
+        : base(options)
+    {
+        _entityUpdateServices = entityUpdateServices ?? [];
+    }
+
+    private static string GetDefaultDbPath()
+    {
         string dbDir;
 
         if (!EnvironmentUtils.IsDockerContainer()
@@ -35,16 +53,16 @@ public class SiteCheckerDbContext : DbContext
         {
             Directory.CreateDirectory(dbDir);
         }
-        _dbPath = Path.Join(dbDir, "SiteChecker.db");
+        return Path.Join(dbDir, "SiteChecker.db");
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
-        if (_entityUpdateServices != null)
+        if (!optionsBuilder.IsConfigured)
         {
-            optionsBuilder.AddInterceptors(new ChangesInterceptor(_entityUpdateServices));
+            optionsBuilder.UseSqlite($"Data Source={GetDefaultDbPath()}");
         }
+        optionsBuilder.AddInterceptors(new ChangesInterceptor(_entityUpdateServices));
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

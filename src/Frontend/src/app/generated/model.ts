@@ -8,7 +8,6 @@ import { inject, Injectable } from '@angular/core';
 import { lastValueFrom } from 'rxjs';
 
 export const CheckStatus = z.enum([
-	"Created",
 	"Queued",
 	"Checking",
 	"Done",
@@ -168,6 +167,7 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 		const result = await lastValueFrom(obs$);
 		return SiteCheckScreenshot.parse(result);
 	}
+	/** Requests a check for the site, or returns the site's open check if it already has one. */
 	public async createSiteCheck(siteId: number) 
 	{
 		const obs$ = this._httpClient.request(

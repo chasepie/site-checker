@@ -82,10 +82,7 @@ public class Program
 
         services.AddScraperServices();
 
-        services
-            .AddSiteCheckQueueService()
-            .AddHostedService<SiteCheckQueueProcessor>()
-            .AddHostedService<SiteCheckTimer>();
+        services.AddSiteCheckRunner();
 
         services.AddHttpContextAccessor();
         services.AddPiaService();

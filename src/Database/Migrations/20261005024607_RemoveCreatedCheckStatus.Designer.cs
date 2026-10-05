@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SiteChecker.Database;
 
@@ -11,12 +12,14 @@ using SiteChecker.Database;
 namespace SiteChecker.Database.Migrations
 {
     [DbContext(typeof(SiteCheckerDbContext))]
-    partial class SiteCheckerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261005024607_RemoveCreatedCheckStatus")]
+    partial class RemoveCreatedCheckStatus
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.7");
 
             modelBuilder.Entity("SiteChecker.Database.Model.Site", b =>
                 {
@@ -131,8 +134,6 @@ namespace SiteChecker.Database.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("SiteId");
-
-                    b.HasIndex("Status", "StartDate");
 
                     b.ToTable("SiteChecks");
                 });

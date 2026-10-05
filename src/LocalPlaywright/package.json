@@ -10,11 +10,15 @@
     "start": "npm install && tsx index.ts"
   },
   "devDependencies": {
-    "@types/node": "^24.12.2",
-    "tsx": "^4.21.0",
+    "@types/node": "^24.19.1",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "playwright": "1.59.1"
+    "playwright": "1.63.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
   }
 }

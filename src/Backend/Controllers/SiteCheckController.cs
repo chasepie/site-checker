@@ -1,19 +1,23 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Backend.Extensions;
+using SiteChecker.Backend.Services.CheckQueue;
 using SiteChecker.Database;
 using SiteChecker.Database.Extensions;
 using SiteChecker.Database.Model;
-using SiteChecker.Scraper;
 
 namespace SiteChecker.Backend.Controllers;
 
 [Route("api/Site/{siteId}/check")]
 [ApiController]
-public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBase
+public class SiteCheckController(
+    SiteCheckerDbContext dbContext,
+    SiteCheckRunner runner)
+    : ControllerBase
 {
     private CancellationToken CancellationToken => HttpContext.RequestAborted;
     private readonly SiteCheckerDbContext _dbContext = dbContext;
+    private readonly SiteCheckRunner _runner = runner;
 
     [HttpGet]
     public async Task<ActionResult<PagedResponse<SiteCheck>>> GetAllSiteChecks(
@@ -57,50 +61,34 @@ public class SiteCheckController(SiteCheckerDbContext dbContext) : ControllerBas
         return this.OkOrNotFound(siteCheck?.Screenshot);
     }
 
+    /// <summary>
+    /// Requests a check for the site, or returns the site's open check if it already has one.
+    /// </summary>
     [HttpPost]
     public async Task<ActionResult<SiteCheck>> CreateSiteCheck(
         [FromRoute] int siteId)
     {
-        var site = await _dbContext.Sites
-            .FirstOrDefaultAsync(
-                s => s.Id == siteId,
-                CancellationToken);
-        if (site == null)
+        var siteCheck = await _runner.RequestCheckAsync(siteId, CancellationToken);
+        if (siteCheck == null)
         {
             return NotFound();
         }
 
-        var siteCheck = new SiteCheck(site);
-        var entityEntry = _dbContext.SiteChecks.Add(siteCheck);
-        await _dbContext.SaveChangesAsync(CancellationToken);
-
         return CreatedAtAction(
             nameof(GetSiteCheck),
             new { siteId, id = siteCheck.Id },
-            entityEntry.Entity);
+            siteCheck);
     }
 
     [HttpPost(nameof(CreateEmptyCheck))]
     public async Task<ActionResult<SiteCheck>> CreateEmptyCheck(
         [FromRoute] int siteId)
     {
-        var site = await _dbContext.Sites
-            .FirstOrDefaultAsync(
-                s => s.Id == siteId,
-                CancellationToken);
-        if (site == null)
+        var siteCheck = await _runner.RecordEmptyCheckAsync(siteId, CancellationToken);
+        if (siteCheck == null)
         {
             return NotFound();
         }
-
-        var siteCheck = new SiteCheck(site);
-        var empty = new SuccessScrapeResult
-        {
-            Content = "[Empty Check]"
-        };
-        siteCheck.Update(empty);
-        _dbContext.SiteChecks.Add(siteCheck);
-        await _dbContext.SaveChangesAsync(CancellationToken);
 
         return CreatedAtAction(
             nameof(GetSiteCheck),
