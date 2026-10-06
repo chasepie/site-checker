@@ -42,6 +42,12 @@ public class SiteCheck : IEntityWithId
     /// </summary>
     public FailureKind? FailureKind { get; set; }
 
+    /// <summary>
+    /// When this check's Failing notification reached at least one Notification Channel. A
+    /// Failing Run is reported once any of its checks has this set.
+    /// </summary>
+    public DateTime? ReportedAt { get; set; }
+
     public required DateTime StartDate { get; set; }
 
     public required DateTime? DoneDate { get; set; }
@@ -73,12 +79,12 @@ public class SiteCheck : IEntityWithId
         StartDate = startDate;
     }
 
-    public void Update(Exception ex)
+    public void Update(Exception ex, DateTime doneDate)
     {
         Status = CheckStatus.Failed;
         FailureKind = Model.FailureKind.Unexpected;
         Value = ex.Message;
-        DoneDate = DateTime.UtcNow;
+        DoneDate = doneDate;
     }
 }
 

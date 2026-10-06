@@ -19,6 +19,13 @@ public sealed class PushoverChannel(
     public const string PushoverTokenKey = "PUSHOVER_TOKEN";
     public const int MaxAttachmentSize = 5 * 1024 * 1024; // 5 MB
 
+    /// <summary>
+    /// Emergency messages re-alert every minute until acknowledged, for up to an hour.
+    /// Pushover rejects Emergency messages without these.
+    /// </summary>
+    private const int EmergencyRetrySeconds = 60;
+    private const int EmergencyExpireSeconds = 60 * 60;
+
     private readonly HttpClient _httpClient = httpClient;
     private readonly ILogger<PushoverChannel> _logger = logger;
 
@@ -33,14 +40,22 @@ public sealed class PushoverChannel(
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public async Task SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
+    public async Task<bool> SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
     {
-        var priority = GetPriority(notification.Kind, site.PushoverConfig);
+        var priority = GetPriority(notification.Settings, site.PushoverConfig);
         if (priority == null)
         {
             _logger.LogDebug("Pushover is off for {Kind} notifications for site {SiteId}.", notification.Kind, site.Id);
-            return;
+            return false;
         }
+
+        // Good news shouldn't need acknowledging.
+        var isRecovery = notification.Kind is NotificationKind.Recovered or NotificationKind.RecoveredAndUpdated;
+        if (isRecovery && priority == PushoverPriority.Emergency)
+        {
+            priority = PushoverPriority.High;
+        }
+        var isEmergency = priority == PushoverPriority.Emergency;
 
         await SendMessageAsync(new PushoverContents
         {
@@ -49,20 +64,18 @@ public sealed class PushoverChannel(
             Priority = (int)priority,
             Url = notification.SiteLink,
             Attachment = notification.Screenshot,
+            Retry = isEmergency ? EmergencyRetrySeconds : null,
+            Expire = isEmergency ? EmergencyExpireSeconds : null,
         }, cancellationToken);
+        return true;
     }
 
-    /// <summary>
-    /// Recoveries use the failure priority so the all-clear reaches you wherever the alert did.
-    /// A Recovery that also changed content falls back to the success priority, so the content
-    /// change isn't lost when failure notifications are off.
-    /// </summary>
-    private static PushoverPriority? GetPriority(NotificationKind kind, PushoverConfig config) => kind switch
+    private static PushoverPriority? GetPriority(NotificationSettings settings, PushoverConfig config) => settings switch
     {
-        NotificationKind.Updated => config.SuccessPriority,
-        NotificationKind.Failing or NotificationKind.Recovered => config.FailurePriority,
-        NotificationKind.RecoveredAndUpdated => config.FailurePriority ?? config.SuccessPriority,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        NotificationSettings.Success => config.SuccessPriority,
+        NotificationSettings.Failure => config.FailurePriority,
+        NotificationSettings.FailureThenSuccess => config.FailurePriority ?? config.SuccessPriority,
+        _ => throw new ArgumentOutOfRangeException(nameof(settings), settings, null),
     };
 
     private async Task SendMessageAsync(

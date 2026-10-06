@@ -20,11 +20,30 @@ public enum NotificationKind
 }
 
 /// <summary>
+/// Which of a Site's per-outcome channel settings a notification uses.
+/// </summary>
+public enum NotificationSettings
+{
+    /// <summary>The Site's success settings.</summary>
+    Success,
+
+    /// <summary>The Site's failure settings.</summary>
+    Failure,
+
+    /// <summary>
+    /// The failure settings, or the success settings if the channel is off for failures, so a
+    /// content change isn't lost.
+    /// </summary>
+    FailureThenSuccess,
+}
+
+/// <summary>
 /// A channel-neutral notification. Each <see cref="INotificationChannel"/> decides whether the
 /// Site wants it on that channel and how to format it.
 /// </summary>
 public sealed record Notification(
     NotificationKind Kind,
+    NotificationSettings Settings,
     string Title,
     string Body,
     Uri SiteUrl,

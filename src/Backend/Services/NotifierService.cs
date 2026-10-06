@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SiteChecker.Backend.Notifiers;
 using SiteChecker.Database;
 using SiteChecker.Database.Model;
@@ -11,17 +12,20 @@ namespace SiteChecker.Backend.Services;
 /// Runner (see <c>docs/adr/0002-runner-triggers-notifications.md</c>).
 /// </summary>
 /// <remarks>
-/// Whether a Failing Run has been reported is derived from the Site's check history on every
-/// call, never stored: a run is reported once it contains an unexpected failure or its Known
-/// Failures reach the Site's Known Failure Threshold.
+/// A Failing Run should be reported once it contains an unexpected failure or its Known
+/// Failures reach the Site's Known Failure Threshold. It counts as reported only once a Failing
+/// notification actually reached a channel, recorded as <see cref="SiteCheck.ReportedAt"/>; until
+/// then, each failure in the run tries again. History is ordered by when checks finished.
 /// </remarks>
 public sealed class NotifierService(
     IServiceScopeFactory scopeFactory,
+    TimeProvider timeProvider,
     ILogger<NotifierService> logger)
 {
     private const string NoContent = "[No content]";
 
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
+    private readonly TimeProvider _timeProvider = timeProvider;
     private readonly ILogger<NotifierService> _logger = logger;
 
     /// <summary>
@@ -71,8 +75,15 @@ public sealed class NotifierService(
                     .FirstOrDefaultAsync(cancellationToken),
             };
 
-            await Task.WhenAll(channels.Select(channel =>
+            var delivered = await Task.WhenAll(channels.Select(channel =>
                 SendAsync(channel, notification, siteCheck.Site, cancellationToken)));
+
+            if (notification.Kind == NotificationKind.Failing && delivered.Any(sent => sent))
+            {
+                var reported = await dbContext.SiteChecks.FirstAsync(sc => sc.Id == siteCheck.Id, cancellationToken);
+                reported.ReportedAt = _timeProvider.GetUtcNow().UtcDateTime;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -80,7 +91,8 @@ public sealed class NotifierService(
         }
     }
 
-    private async Task SendAsync(
+    /// <returns>Whether the channel delivered the notification.</returns>
+    private async Task<bool> SendAsync(
         INotificationChannel channel,
         Notification notification,
         Site site,
@@ -88,12 +100,13 @@ public sealed class NotifierService(
     {
         try
         {
-            await channel.SendAsync(notification, site, cancellationToken);
+            return await channel.SendAsync(notification, site, cancellationToken);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogError(ex, "{Channel} failed to send a {Kind} notification for site {SiteId}.",
                 channel.GetType().Name, notification.Kind, site.Id);
+            return false;
         }
     }
 
@@ -104,38 +117,45 @@ public sealed class NotifierService(
         CancellationToken cancellationToken)
     {
         var site = siteCheck.Site;
+        var doneDate = siteCheck.DoneDate!.Value;
+        var siteChecks = dbContext.SiteChecks.Where(sc => sc.SiteId == site.Id);
 
-        // The Failing Run before this check: every Failed check since the Site's last Done.
-        var previousDone = await dbContext.SiteChecks
-            .AsNoTracking()
-            .Where(sc => sc.SiteId == site.Id
-                && sc.Id < siteCheck.Id
-                && sc.Status == CheckStatus.Done)
-            .OrderByDescending(sc => sc.Id)
-            .Select(sc => new { sc.Id, sc.Value })
+        // History is ordered by when checks finished (DoneDate, then Id), not by when they were
+        // created: an Empty Check recorded while a check is open finishes first.
+        var finishedBefore = siteChecks.Where(sc =>
+            sc.DoneDate < doneDate || (sc.DoneDate == doneDate && sc.Id < siteCheck.Id));
+
+        var previousDone = await finishedBefore
+            .Where(sc => sc.Status == CheckStatus.Done)
+            .OrderByDescending(sc => sc.DoneDate)
+            .ThenByDescending(sc => sc.Id)
+            .Select(sc => new { sc.Id, sc.DoneDate, sc.Value })
             .FirstOrDefaultAsync(cancellationToken);
-        var previousDoneId = previousDone?.Id ?? 0;
+
+        // The Failing Run before this check: every Failed check that finished since the previous Done.
+        var failedRunBefore = finishedBefore.Where(sc => sc.Status == CheckStatus.Failed);
+        if (previousDone != null)
+        {
+            failedRunBefore = failedRunBefore.Where(sc =>
+                sc.DoneDate > previousDone.DoneDate
+                || (sc.DoneDate == previousDone.DoneDate && sc.Id > previousDone.Id));
+        }
 
         // Counted in the database: a long Failing Run can hold thousands of checks.
-        var failedRunBefore = dbContext.SiteChecks
-            .Where(sc => sc.SiteId == site.Id
-                && sc.Id > previousDoneId
-                && sc.Id < siteCheck.Id
-                && sc.Status == CheckStatus.Failed);
         var runBefore = new RunSummary(
             Known: await failedRunBefore.CountAsync(sc => sc.FailureKind == FailureKind.Known, cancellationToken),
-            Unexpected: await failedRunBefore.CountAsync(sc => sc.FailureKind != FailureKind.Known, cancellationToken));
-        var runBeforeWasReported = runBefore.IsReported(site.KnownFailuresThreshold);
+            Unexpected: await failedRunBefore.CountAsync(sc => sc.FailureKind != FailureKind.Known, cancellationToken),
+            Reported: await failedRunBefore.AnyAsync(sc => sc.ReportedAt != null, cancellationToken));
 
         if (siteCheck.Status == CheckStatus.Failed)
         {
             var run = runBefore.With(siteCheck.FailureKind);
-            if (runBeforeWasReported || !run.IsReported(site.KnownFailuresThreshold))
+            if (runBefore.Reported || !run.ShouldBeReported(site.KnownFailuresThreshold))
             {
                 return null;
             }
 
-            var body = IsUnexpected(siteCheck.FailureKind)
+            var body = IsUnexpected(siteCheck.FailureKind) || run.Known < site.KnownFailuresThreshold
                 ? Message(siteCheck)
                 : $"{run.Known} Known Failures: {Message(siteCheck)}";
             return Build(NotificationKind.Failing, $"{site.Name} Check Failed", body, siteCheck);
@@ -145,7 +165,7 @@ public sealed class NotifierService(
         var contentChanged = previousDone != null
             && !string.Equals(previousDone.Value, siteCheck.Value, StringComparison.Ordinal);
 
-        if (runBeforeWasReported)
+        if (runBefore.Reported)
         {
             return contentChanged
                 ? Build(NotificationKind.RecoveredAndUpdated, $"{site.Name} Recovered and Updated", Message(siteCheck), siteCheck)
@@ -163,22 +183,36 @@ public sealed class NotifierService(
 
     /// <remarks>The screenshot is attached by <see cref="NotifyAsync"/>.</remarks>
     private static Notification Build(NotificationKind kind, string title, string body, SiteCheck siteCheck)
-        => new(kind, title, body, siteCheck.Site.Url, Screenshot: null);
+        => new(kind, SettingsFor(kind), title, body, siteCheck.Site.Url, Screenshot: null);
 
     /// <summary>
-    /// How many Known and unexpected failures a Failing Run holds. Checks recorded before Known
-    /// Failures were tracked count as unexpected.
+    /// Recoveries use the failure settings so the all-clear reaches you wherever the alert did. A
+    /// Recovery that also changed content falls back to the success settings, so the content change
+    /// isn't lost when a channel has failures off.
     /// </summary>
-    private readonly record struct RunSummary(int Known, int Unexpected)
+    private static NotificationSettings SettingsFor(NotificationKind kind) => kind switch
+    {
+        NotificationKind.Updated => NotificationSettings.Success,
+        NotificationKind.Failing or NotificationKind.Recovered => NotificationSettings.Failure,
+        NotificationKind.RecoveredAndUpdated => NotificationSettings.FailureThenSuccess,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+    };
+
+    /// <summary>
+    /// A Failing Run so far: how many Known and unexpected failures it holds, and whether a
+    /// Failing notification for it has reached a channel. Checks recorded before Known Failures
+    /// were tracked count as unexpected.
+    /// </summary>
+    private readonly record struct RunSummary(int Known, int Unexpected, bool Reported)
     {
         public RunSummary With(FailureKind? kind)
             => IsUnexpected(kind) ? this with { Unexpected = Unexpected + 1 } : this with { Known = Known + 1 };
 
         /// <summary>
-        /// A Failing Run is reported by its first unexpected failure, or when its Known Failures
-        /// reach the threshold. A run with no failures is never reported.
+        /// A Failing Run should be reported once it has an unexpected failure, or its Known
+        /// Failures reach the threshold. A run with no failures never should.
         /// </summary>
-        public bool IsReported(int knownFailuresThreshold)
+        public bool ShouldBeReported(int knownFailuresThreshold)
             => Unexpected > 0 || (Known > 0 && Known >= knownFailuresThreshold);
     }
 }
@@ -189,6 +223,7 @@ public static class NotifierServiceExtensions
     {
         public IServiceCollection AddNotifierService()
         {
+            services.TryAddSingleton(TimeProvider.System);
             return services.AddSingleton<NotifierService>();
         }
     }

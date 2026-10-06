@@ -205,7 +205,7 @@ public sealed class SiteCheckRunner : IDisposable
         }
 
         var siteCheck = new SiteCheck(site, _timeProvider.GetUtcNow().UtcDateTime);
-        siteCheck.Update(new SuccessScrapeResult { Content = EmptyCheckContent });
+        siteCheck.Update(new SuccessScrapeResult { Content = EmptyCheckContent }, _timeProvider.GetUtcNow().UtcDateTime);
         dbContext.SiteChecks.Add(siteCheck);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -382,7 +382,7 @@ public sealed class SiteCheckRunner : IDisposable
         };
 
         var result = await _scraperService.ScrapeContentAsync(request);
-        siteCheck.Update(result);
+        siteCheck.Update(result, _timeProvider.GetUtcNow().UtcDateTime);
 
         if (result.Screenshot is not null)
         {
@@ -412,7 +412,7 @@ public sealed class SiteCheckRunner : IDisposable
             return;
         }
 
-        siteCheck.Update(exception);
+        siteCheck.Update(exception, _timeProvider.GetUtcNow().UtcDateTime);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

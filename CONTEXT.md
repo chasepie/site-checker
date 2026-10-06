@@ -71,7 +71,7 @@ A destination that notifications are sent to (Pushover, Discord), enabled and co
 _Avoid_: Notifier, provider, target
 
 **Failing Run**:
-The consecutive Failed Site Checks of a Site between two Done Site Checks. A Failing Run is reported at most once: on its first unexpected failure, or when its Known Failures reach the Known Failure Threshold.
+The consecutive Failed Site Checks of a Site between two Done Site Checks, in the order they finished. A Failing Run should be reported on its first unexpected failure, or when its Known Failures reach the Known Failure Threshold; it is reported once a notification about it actually reaches a Notification Channel, and only once.
 _Avoid_: Outage, failure streak, incident
 
 **Known Failure Threshold**:

@@ -144,6 +144,14 @@ internal sealed class RunnerHarness : IAsyncDisposable
         return site;
     }
 
+    public async Task SetKnownFailuresThresholdAsync(int siteId, int threshold, CancellationToken cancellationToken)
+    {
+        await using var dbContext = CreateDbContext();
+        var site = await dbContext.Sites.SingleAsync(s => s.Id == siteId, cancellationToken);
+        site.KnownFailuresThreshold = threshold;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<List<SiteCheck>> GetChecksAsync(int siteId, CancellationToken cancellationToken)
     {
         await using var dbContext = CreateDbContext();
@@ -267,7 +275,7 @@ internal sealed class RecordingNotificationChannel : INotificationChannel
         }
     }
 
-    public Task SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
+    public Task<bool> SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
     {
         if (Fail)
         {
@@ -278,6 +286,6 @@ internal sealed class RecordingNotificationChannel : INotificationChannel
         {
             _sent.Add(notification);
         }
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 }

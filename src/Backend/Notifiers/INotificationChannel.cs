@@ -8,9 +8,10 @@ namespace SiteChecker.Backend.Notifiers;
 public interface INotificationChannel
 {
     /// <summary>
-    /// Sends the notification if the Site has this channel enabled for its kind; otherwise does
-    /// nothing.
+    /// Sends the notification if the Site has this channel enabled for the notification's
+    /// <see cref="Notification.Settings"/>; otherwise does nothing.
     /// </summary>
+    /// <returns><c>true</c> if the notification was delivered; <c>false</c> if the Site has this channel off.</returns>
     /// <exception cref="Exception">Any failure to deliver is thrown, never swallowed.</exception>
-    Task SendAsync(Notification notification, Site site, CancellationToken cancellationToken);
+    Task<bool> SendAsync(Notification notification, Site site, CancellationToken cancellationToken);
 }

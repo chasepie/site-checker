@@ -80,6 +80,7 @@ export const SiteCheck = IEntityWithId.extend({
 	vpnLocationId: z.string().nullable(),
 	status: CheckStatus,
 	failureKind: FailureKind.nullable(),
+	reportedAt: z.string().nullable(),
 	startDate: z.string(),
 	doneDate: z.string().nullable(),
 	siteId: z.number(),

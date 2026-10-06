@@ -222,7 +222,117 @@ public sealed class NotificationTests
             Kinds(harness));
     }
 
+    [TestMethod]
+    public async Task LoweringThresholdMidRun_ReportsOnTheNextKnownFailure()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct, knownFailuresThreshold: 5);
+        await RunChecksAsync(harness, site, Content("a"), Known(), Known(), Known());
+
+        await harness.SetKnownFailuresThresholdAsync(site.Id, 2, Ct);
+        await RunChecksAsync(harness, site, Known());
+
+        var notification = Assert.ContainsSingle(harness.Notifications.Sent);
+        Assert.AreEqual("4 Known Failures: Access Denied", notification.Body);
+    }
+
+    [TestMethod]
+    public async Task RaisingThresholdMidRun_DoesNotReportTheRunAgain()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct, knownFailuresThreshold: 2);
+        await RunChecksAsync(harness, site, Content("a"), Known(), Known());
+        Assert.HasCount(1, harness.Notifications.Sent);
+
+        await harness.SetKnownFailuresThresholdAsync(site.Id, 5, Ct);
+        await RunChecksAsync(harness, site, Known(), Known(), Known());
+
+        Assert.HasCount(1, harness.Notifications.Sent);
+    }
+
+    [TestMethod]
+    public async Task EmptyCheckRecordedWhileACheckIsOpen_EndsTheRunBeforeThatCheckFinishes()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await RunChecksAsync(harness, site, Content("a"), Unexpected("boom"));
+
+        // The open check is created first but finishes after the Empty Check.
+        await harness.Runner.RequestCheckAsync(site.Id, Ct);
+        harness.Time.Advance(TimeSpan.FromMinutes(1));
+        await harness.Runner.RecordEmptyCheckAsync(site.Id, Ct);
+        harness.Time.Advance(TimeSpan.FromMinutes(1));
+        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(Content("a"));
+        Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
+
+        // No Recovery: the Empty Check ended the run and reset the baseline, so "a" is an update.
+        CollectionAssert.AreEqual(
+            new[] { NotificationKind.Failing, NotificationKind.Updated },
+            Kinds(harness));
+    }
+
+    [TestMethod]
+    public async Task EachKind_UsesTheAgreedChannelSettings()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+
+        await RunChecksAsync(harness, site,
+            Content("a"), Content("b"),            // Updated
+            Unexpected("boom"), Content("b"),      // Failing, Recovered
+            Unexpected("boom"), Content("c"));     // Failing, Recovered and Updated
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                (NotificationKind.Updated, NotificationSettings.Success),
+                (NotificationKind.Failing, NotificationSettings.Failure),
+                (NotificationKind.Recovered, NotificationSettings.Failure),
+                (NotificationKind.Failing, NotificationSettings.Failure),
+                (NotificationKind.RecoveredAndUpdated, NotificationSettings.FailureThenSuccess),
+            },
+            harness.Notifications.Sent.Select(n => (n.Kind, n.Settings)).ToList());
+    }
+
     // ---- Delivery ----
+
+    [TestMethod]
+    public async Task FailedDelivery_LeavesTheRunUnreported_SoTheNextFailureRetriesTheAlert()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await RunChecksAsync(harness, site, Content("a"));
+
+        harness.Notifications.Fail = true;
+        harness.OtherChannel.Fail = true;
+        await RunChecksAsync(harness, site, Unexpected("boom"));
+        harness.Notifications.Fail = false;
+        harness.OtherChannel.Fail = false;
+        await RunChecksAsync(harness, site, Unexpected("still broken"), Content("a"));
+
+        CollectionAssert.AreEqual(
+            new[] { NotificationKind.Failing, NotificationKind.Recovered },
+            Kinds(harness));
+        Assert.AreEqual("still broken", harness.Notifications.Sent[0].Body);
+    }
+
+    [TestMethod]
+    public async Task NoRecovery_WhenTheRunsAlertNeverReachedAChannel()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await RunChecksAsync(harness, site, Content("a"));
+
+        harness.Notifications.Fail = true;
+        harness.OtherChannel.Fail = true;
+        await RunChecksAsync(harness, site, Unexpected("boom"));
+        harness.Notifications.Fail = false;
+        harness.OtherChannel.Fail = false;
+        await RunChecksAsync(harness, site, Content("a"));
+
+        Assert.IsEmpty(harness.Notifications.Sent);
+    }
+
 
     [TestMethod]
     public async Task FailingChannel_DoesNotBlockOtherChannels_OrAffectTheCheck()

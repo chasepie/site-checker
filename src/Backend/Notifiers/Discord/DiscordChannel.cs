@@ -17,13 +17,13 @@ public sealed class DiscordChannel(
     private readonly RestClient _restClient = restClient;
     private readonly ILogger<DiscordChannel> _logger = logger;
 
-    public async Task SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
+    public async Task<bool> SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
     {
         var config = site.DiscordConfig;
-        if (config.ChannelId is not { } channelId || !IsEnabled(notification.Kind, config))
+        if (config.ChannelId is not { } channelId || !IsEnabled(notification.Settings, config))
         {
             _logger.LogDebug("Discord is off for {Kind} notifications for site {SiteId}.", notification.Kind, site.Id);
-            return;
+            return false;
         }
 
         var embed = new EmbedProperties
@@ -42,19 +42,15 @@ public sealed class DiscordChannel(
             channelId: channelId,
             message: new MessageProperties() { Embeds = [embed] },
             cancellationToken: cancellationToken);
+        return true;
     }
 
-    /// <summary>
-    /// Recoveries use the failure setting so the all-clear reaches you wherever the alert did.
-    /// A Recovery that also changed content falls back to the success setting, so the content
-    /// change isn't lost when failure notifications are off.
-    /// </summary>
-    private static bool IsEnabled(NotificationKind kind, DiscordConfig config) => kind switch
+    private static bool IsEnabled(NotificationSettings settings, DiscordConfig config) => settings switch
     {
-        NotificationKind.Updated => config.SuccessEnabled,
-        NotificationKind.Failing or NotificationKind.Recovered => config.FailureEnabled,
-        NotificationKind.RecoveredAndUpdated => config.FailureEnabled || config.SuccessEnabled,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        NotificationSettings.Success => config.SuccessEnabled,
+        NotificationSettings.Failure => config.FailureEnabled,
+        NotificationSettings.FailureThenSuccess => config.FailureEnabled || config.SuccessEnabled,
+        _ => throw new ArgumentOutOfRangeException(nameof(settings), settings, null),
     };
 }
 
