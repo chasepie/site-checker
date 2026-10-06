@@ -6,6 +6,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
+using SiteChecker.Backend.Notifiers;
+using SiteChecker.Backend.Services;
 using SiteChecker.Backend.Services.CheckQueue;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
@@ -43,6 +45,16 @@ internal sealed class RunnerHarness : IAsyncDisposable
     public FakeScraperService Scraper { get; } = new();
     public RecordingEntityChangeService Broadcasts { get; } = new();
     public SaveFaultInterceptor SaveFaults { get; } = new();
+
+    /// <summary>
+    /// Receives every notification the notifier sends.
+    /// </summary>
+    public RecordingNotificationChannel Notifications { get; } = new();
+
+    /// <summary>
+    /// A second channel, registered first, that a test can make fail.
+    /// </summary>
+    public RecordingNotificationChannel OtherChannel { get; } = new();
     public SiteCheckRunner Runner { get; private set; }
 
     private RunnerHarness(SqliteConnection connection, FakeTimeProvider time)
@@ -83,6 +95,9 @@ internal sealed class RunnerHarness : IAsyncDisposable
             .AddSingleton<IScraperService>(Scraper)
             .AddSingleton<PiaService>()
             .AddSingleton<IEntityChangeService>(Broadcasts)
+            .AddSingleton<INotificationChannel>(OtherChannel)
+            .AddSingleton<INotificationChannel>(Notifications)
+            .AddNotifierService()
             .AddDbContext<SiteCheckerDbContext>(o => o
                 .UseSqlite(_connection)
                 .AddInterceptors(SaveFaults))
@@ -108,7 +123,10 @@ internal sealed class RunnerHarness : IAsyncDisposable
         return new SiteCheckerDbContext(options);
     }
 
-    public async Task<Site> AddSiteAsync(SiteSchedule? schedule, CancellationToken cancellationToken)
+    public async Task<Site> AddSiteAsync(
+        SiteSchedule? schedule,
+        CancellationToken cancellationToken,
+        int knownFailuresThreshold = 5)
     {
         _siteCount++;
         var site = new Site
@@ -117,6 +135,7 @@ internal sealed class RunnerHarness : IAsyncDisposable
             Url = new Uri($"https://example.com/{_siteCount}"),
             ScraperId = $"SCRAPER_{_siteCount}",
             Schedule = schedule ?? new SiteSchedule(),
+            KnownFailuresThreshold = knownFailuresThreshold,
         };
 
         await using var dbContext = CreateDbContext();
@@ -221,5 +240,44 @@ internal sealed class SaveFaultInterceptor : SaveChangesInterceptor
             throw new DbUpdateException("Injected save failure");
         }
         return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Records the notifications sent to it, regardless of the Site's channel settings.
+/// </summary>
+internal sealed class RecordingNotificationChannel : INotificationChannel
+{
+    private readonly List<Notification> _sent = [];
+    private readonly Lock _lock = new();
+
+    /// <summary>
+    /// When true, every send throws instead of recording.
+    /// </summary>
+    public bool Fail { get; set; }
+
+    public IReadOnlyList<Notification> Sent
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _sent];
+            }
+        }
+    }
+
+    public Task SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
+    {
+        if (Fail)
+        {
+            throw new HttpRequestException("Channel is down");
+        }
+
+        lock (_lock)
+        {
+            _sent.Add(notification);
+        }
+        return Task.CompletedTask;
     }
 }

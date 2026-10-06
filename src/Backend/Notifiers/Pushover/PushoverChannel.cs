@@ -1,10 +1,15 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SiteChecker.Database.Model;
 
 namespace SiteChecker.Backend.Notifiers.Pushover;
 
-public class PushoverService
+/// <summary>
+/// Sends notifications through Pushover, at the priority the Site configures for the outcome.
+/// Pushover is the only channel that attaches the screenshot.
+/// </summary>
+public sealed class PushoverChannel : INotificationChannel
 {
     public const string PushoverUserKey = "PUSHOVER_USER";
     public const string PushoverTokenKey = "PUSHOVER_TOKEN";
@@ -12,7 +17,7 @@ public class PushoverService
 
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
-    private readonly ILogger<PushoverService> _logger;
+    private readonly ILogger<PushoverChannel> _logger;
     private readonly string _pushoverUser;
     private readonly string _pushoverToken;
 
@@ -21,10 +26,10 @@ public class PushoverService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public PushoverService(
+    public PushoverChannel(
         HttpClient httpClient,
         IConfiguration configuration,
-        ILogger<PushoverService> logger)
+        ILogger<PushoverChannel> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
@@ -37,9 +42,41 @@ public class PushoverService
             ?? throw new InvalidOperationException($"Pushover value ({PushoverTokenKey}) is not configured.");
     }
 
-    public async Task SendMessageAsync(
+    public async Task SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
+    {
+        var priority = GetPriority(notification.Kind, site.PushoverConfig);
+        if (priority == null)
+        {
+            _logger.LogDebug("Pushover is off for {Kind} notifications for site {SiteId}.", notification.Kind, site.Id);
+            return;
+        }
+
+        await SendMessageAsync(new PushoverContents
+        {
+            Title = notification.Title,
+            Message = notification.Body,
+            Priority = (int)priority,
+            Url = notification.SiteUrl.ToString(),
+            Attachment = notification.Screenshot,
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Recoveries use the failure priority so the all-clear reaches you wherever the alert did.
+    /// A Recovery that also changed content falls back to the success priority, so the content
+    /// change isn't lost when failure notifications are off.
+    /// </summary>
+    private static PushoverPriority? GetPriority(NotificationKind kind, PushoverConfig config) => kind switch
+    {
+        NotificationKind.Updated => config.SuccessPriority,
+        NotificationKind.Failing or NotificationKind.Recovered => config.FailurePriority,
+        NotificationKind.RecoveredAndUpdated => config.FailurePriority ?? config.SuccessPriority,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+    };
+
+    private async Task SendMessageAsync(
         PushoverContents contents,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         using var formContent = new MultipartFormDataContent();
         formContent.Add(new StringContent(_pushoverUser), "user");
@@ -84,37 +121,41 @@ public class PushoverService
         {
             _logger.LogTrace("Pushover message send failed with status code {StatusCode}. Getting error message...", result.StatusCode);
             var error = await result.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("Failed to send Pushover message (StatusCode: {StatusCode}): {Error}", result.StatusCode, error);
+            throw new HttpRequestException(
+                $"Pushover rejected the message ({(int)result.StatusCode}): {error}",
+                inner: null,
+                statusCode: result.StatusCode);
         }
     }
 }
 
-public static class PushoverServiceExtensions
+public static class PushoverChannelExtensions
 {
     extension(IServiceCollection services)
     {
-        public IHttpClientBuilder AddPushoverService()
+        public IServiceCollection AddPushoverChannel()
         {
-            return services.AddHttpClient<PushoverService>((serviceProvider, httpClient) =>
+            services.AddHttpClient<PushoverChannel>((serviceProvider, httpClient) =>
             {
                 var config = serviceProvider.GetRequiredService<IConfiguration>();
                 var baseAddress = config["PUSHOVER_API_URL"] ?? "https://api.pushover.net";
                 httpClient.BaseAddress = new Uri(baseAddress);
                 httpClient.DefaultRequestHeaders.Accept.Add(new("application/json"));
             });
+            return services.AddTransient<INotificationChannel>(sp => sp.GetRequiredService<PushoverChannel>());
         }
 
-        public bool TryAddPushoverService(IConfiguration configuration, ILogger? logger = null)
+        public bool TryAddPushoverChannel(IConfiguration configuration, ILogger? logger = null)
         {
-            var user = configuration.GetValue<string>(PushoverService.PushoverUserKey);
-            var token = configuration.GetValue<string>(PushoverService.PushoverTokenKey);
+            var user = configuration.GetValue<string>(PushoverChannel.PushoverUserKey);
+            var token = configuration.GetValue<string>(PushoverChannel.PushoverTokenKey);
             if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(token))
             {
-                logger?.LogWarning($"Missing pushover configuration: {PushoverService.PushoverUserKey} or {PushoverService.PushoverTokenKey}. Skipping Pushover notifier setup.");
+                logger?.LogWarning($"Missing pushover configuration: {PushoverChannel.PushoverUserKey} or {PushoverChannel.PushoverTokenKey}. Skipping Pushover channel setup.");
                 return false;
             }
 
-            services.AddPushoverService();
+            services.AddPushoverChannel();
             return true;
         }
     }

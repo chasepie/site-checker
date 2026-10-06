@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +13,18 @@ public enum CheckStatus
     Failed = 4,
 }
 
+/// <summary>
+/// Why a Failed Site Check failed. Values are pinned because they are persisted.
+/// </summary>
+public enum FailureKind
+{
+    /// <summary>An unexpected error.</summary>
+    Unexpected = 1,
+
+    /// <summary>A Known Failure: a recognised condition such as access denied or a blank page.</summary>
+    Known = 2,
+}
+
 // Serves the Site Check queue: the oldest Queued check (by StartDate, then Id) is claimed next.
 [Index(nameof(Status), nameof(StartDate))]
 public class SiteCheck : IEntityWithId
@@ -26,6 +37,11 @@ public class SiteCheck : IEntityWithId
 
     public CheckStatus Status { get; set; } = CheckStatus.Queued;
 
+    /// <summary>
+    /// Set only when <see cref="Status"/> is <see cref="CheckStatus.Failed"/>.
+    /// </summary>
+    public FailureKind? FailureKind { get; set; }
+
     public required DateTime StartDate { get; set; }
 
     public required DateTime? DoneDate { get; set; }
@@ -34,9 +50,6 @@ public class SiteCheck : IEntityWithId
 
     [JsonIgnore]
     public Dictionary<string, string> Metadata { get; set; } = [];
-
-    [JsonIgnore, NotMapped]
-    public Dictionary<string, object> MetadataLocal { get; set; } = [];
 
     [JsonIgnore]
     public Site Site { get; set; } = null!;
@@ -63,6 +76,7 @@ public class SiteCheck : IEntityWithId
     public void Update(Exception ex)
     {
         Status = CheckStatus.Failed;
+        FailureKind = Model.FailureKind.Unexpected;
         Value = ex.Message;
         DoneDate = DateTime.UtcNow;
     }

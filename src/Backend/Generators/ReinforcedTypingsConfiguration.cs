@@ -42,6 +42,7 @@ public static partial class ReinforcedTypingsConfiguration
         var enums = new List<Type>
         {
             typeof(CheckStatus),
+            typeof(FailureKind),
             typeof(PushoverPriority),
         };
         builder.ExportAsEnums(enums, builder =>

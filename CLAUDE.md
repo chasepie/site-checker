@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-SiteChecker is a self-hosted ASP.NET Core (.NET 10 / C# 14) + Angular 21 app that periodically scrapes websites with Playwright (via Browserless containers, optionally routed through a PIA WireGuard VPN), records each result, and notifies via Pushover or Discord when content changes or a check fails.
+SiteChecker is a self-hosted ASP.NET Core (.NET 10 / C# 14) + Angular 21 app that periodically scrapes websites with Playwright (via Browserless containers, optionally routed through a PIA WireGuard VPN), records each result, and notifies via Pushover or Discord when content changes, a Site starts failing, or it recovers.
 
 Domain vocabulary lives in `CONTEXT.md`; use those terms (Site, Site Check, Queued, Known Failure, ...). Architectural decisions live in `docs/adr/` — don't re-litigate them without reason.
 
@@ -51,10 +51,13 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 - `SiteCheckTimer` and `SiteCheckQueueProcessor` are thin `BackgroundService` loops that call the runner. Keep logic out of them, and create or run Site Checks through the runner, never by writing `SiteCheck` rows directly.
 - Checks run one at a time, because rotating the VPN Location restarts the shared Browserless VPN container. Orphan recovery depends on this: any `Checking` row found between checks is assumed abandoned.
 
-### Save interceptor fan-out
-`Database/ChangesInterceptor` runs on every `SaveChanges` and passes the created, updated and deleted entities to each registered `IEntityChangeService`:
-- `EntityChangesService` broadcasts them to SignalR clients. **Never push SignalR entity events manually after a save.** Note that `ExecuteUpdate`/`ExecuteDelete` skip the interceptor, so they broadcast nothing.
-- `NotifierService` reacts to a Site Check becoming Done or Failed. It notifies only when content differs from the previous Done check, or on a failure that isn't a Known Failure. It calls `PushoverService` and `DiscordService` directly; there is no notifier interface yet. Keep it the single notification dispatch path.
+### Save interceptor and SignalR
+`Database/ChangesInterceptor` runs on every `SaveChanges` and passes the created, updated and deleted entities to each registered `IEntityChangeService`. Today that's only `EntityChangesService`, which broadcasts them to SignalR clients. **Never push SignalR entity events manually after a save.** Note that `ExecuteUpdate`/`ExecuteDelete` skip the interceptor, so they broadcast nothing.
+
+### Notifications
+- `SiteCheckRunner` calls `NotifierService.NotifyAsync(siteCheckId)` after saving each outcome (ADR 0002); notifications do **not** hang off the save interceptor. `NotifierService` is the single dispatch path and never throws for a notification problem.
+- The policy (terms in `CONTEXT.md`): a Done check notifies **Updated** when its content differs from the previous Done check (a Site's first Done is only a baseline). A **Failing Run** is reported once, on its first unexpected failure or when its Known Failures reach the Site's `KnownFailuresThreshold`. A Done check ending a reported run notifies **Recovered** (or **Recovered and Updated**). Whether a run was reported is derived from history (`SiteCheck.FailureKind`), never stored. Empty Checks never notify but end a Failing Run.
+- Channels implement `Notifiers/INotificationChannel`: the notifier decides *whether*, each channel decides *how*, including whether the Site has it enabled for that kind. `PushoverChannel` and `DiscordChannel` are registered only when configured, and must throw on delivery failure. Recoveries use each channel's failure settings.
 
 ### Scrapers and Sites
 - A scraper is a class deriving `ScraperBase` in `src/Scraper/Scrapers/` (override `Id`, `Url`, `DoScrapeAsync`), registered with `AddScraper<T>()` in `AddScraperServices()` (`ScraperService.cs`). `Site.ScraperId` selects it at runtime.
@@ -84,7 +87,7 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 
 ### Testing
 - Use MSTest v4 only (no xUnit, NUnit, or Jest). The MSTest analyzers run in `Recommended` mode with warnings as errors, so use the specific asserts (`Assert.HasCount`, `Assert.ContainsSingle`, `Assert.IsEmpty`) and pass `TestContext.CancellationToken`.
-- `test/Backend.Test` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, and `harness.SaveFaults` fails a chosen save. Extend the harness rather than mocking EF.
+- `test/Backend.Test` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`. Extend the harness rather than mocking EF.
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.

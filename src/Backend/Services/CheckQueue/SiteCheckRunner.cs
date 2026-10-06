@@ -31,6 +31,7 @@ public sealed class SiteCheckRunner : IDisposable
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IScraperService _scraperService;
     private readonly PiaService _piaService;
+    private readonly NotifierService _notifier;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SiteCheckRunner> _logger;
     private readonly TimeSpan _vpnChangeInterval;
@@ -55,6 +56,7 @@ public sealed class SiteCheckRunner : IDisposable
         IServiceScopeFactory scopeFactory,
         IScraperService scraperService,
         PiaService piaService,
+        NotifierService notifier,
         TimeProvider timeProvider,
         IConfiguration configuration,
         ILogger<SiteCheckRunner> logger)
@@ -62,6 +64,7 @@ public sealed class SiteCheckRunner : IDisposable
         _scopeFactory = scopeFactory;
         _scraperService = scraperService;
         _piaService = piaService;
+        _notifier = notifier;
         _timeProvider = timeProvider;
         _logger = logger;
 
@@ -238,6 +241,10 @@ public sealed class SiteCheckRunner : IDisposable
             _logger.LogError(ex, "Error occurred running Site Check {SiteCheckId}.", siteCheckId);
             await MarkFailedAsync(siteCheckId.Value, ex, cancellationToken);
         }
+
+        // Outside the try: the outcome is already saved, and a notification problem must never
+        // turn a Done check into a Failed one.
+        await _notifier.NotifyAsync(siteCheckId.Value, cancellationToken);
 
         return true;
     }

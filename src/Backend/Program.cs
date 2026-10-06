@@ -89,8 +89,8 @@ public class Program
 
         services.AddScoped<IEntityChangeService, EntityChangesService>();
 
-        services.TryAddPushoverService(configuration);
-        services.TryAddDiscordService(configuration);
+        services.TryAddPushoverChannel(configuration);
+        services.TryAddDiscordChannel(configuration);
         services.AddNotifierService();
 
         services.AddHealthChecks();
