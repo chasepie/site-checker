@@ -264,6 +264,16 @@ internal sealed class RecordingNotificationChannel : INotificationChannel
     /// </summary>
     public bool Fail { get; set; }
 
+    /// <summary>
+    /// Runs at the start of every send, before it records or fails (for example, to cancel a token).
+    /// </summary>
+    public Action? BeforeSend { get; set; }
+
+    /// <summary>
+    /// Runs after a notification is recorded, before the send reports success.
+    /// </summary>
+    public Action? AfterSend { get; set; }
+
     public IReadOnlyList<Notification> Sent
     {
         get
@@ -277,6 +287,7 @@ internal sealed class RecordingNotificationChannel : INotificationChannel
 
     public Task<bool> SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
     {
+        BeforeSend?.Invoke();
         if (Fail)
         {
             throw new HttpRequestException("Channel is down");
@@ -286,6 +297,7 @@ internal sealed class RecordingNotificationChannel : INotificationChannel
         {
             _sent.Add(notification);
         }
+        AfterSend?.Invoke();
         return Task.FromResult(true);
     }
 }

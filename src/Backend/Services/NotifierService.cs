@@ -24,6 +24,11 @@ public sealed class NotifierService(
 {
     private const string NoContent = "[No content]";
 
+    /// <summary>
+    /// How long recording a delivered alert may take once shutdown has begun.
+    /// </summary>
+    private static readonly TimeSpan RecordDeliveryTimeout = TimeSpan.FromSeconds(10);
+
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     private readonly TimeProvider _timeProvider = timeProvider;
     private readonly ILogger<NotifierService> _logger = logger;
@@ -31,6 +36,8 @@ public sealed class NotifierService(
     /// <summary>
     /// Sends whatever notification the completed Site Check warrants, if any. Never throws for a
     /// notification problem: failures are logged, and one failing channel doesn't stop the others.
+    /// Cancellation may stop it before anything is sent, but once a channel has delivered a
+    /// Failing notification, that delivery is recorded even if cancellation follows.
     /// </summary>
     /// <param name="siteCheckId">The ID of a Site Check whose outcome has been saved.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
@@ -75,23 +82,28 @@ public sealed class NotifierService(
                     .FirstOrDefaultAsync(cancellationToken),
             };
 
+            // SendAsync never throws, so every channel's result arrives even if one is canceled.
             var delivered = await Task.WhenAll(channels.Select(channel =>
                 SendAsync(channel, notification, siteCheck.Site, cancellationToken)));
 
             if (notification.Kind == NotificationKind.Failing && delivered.Any(sent => sent))
             {
-                var reported = await dbContext.SiteChecks.FirstAsync(sc => sc.Id == siteCheck.Id, cancellationToken);
+                // Not the shutdown token: an alert that was delivered must be recorded, or after a
+                // restart the run would alert again and never send its Recovery.
+                using var recordDelivery = new CancellationTokenSource(RecordDeliveryTimeout, _timeProvider);
+                var reported = await dbContext.SiteChecks.FirstAsync(sc => sc.Id == siteCheck.Id, recordDelivery.Token);
                 reported.ReportedAt = _timeProvider.GetUtcNow().UtcDateTime;
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await dbContext.SaveChangesAsync(recordDelivery.Token);
             }
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logger.LogError(ex, "Could not send notifications for site check {SiteCheckId}.", siteCheckId);
         }
     }
 
-    /// <returns>Whether the channel delivered the notification.</returns>
+    /// <returns>Whether the channel delivered the notification. Never throws: a failed or canceled
+    /// send counts as not delivered.</returns>
     private async Task<bool> SendAsync(
         INotificationChannel channel,
         Notification notification,
@@ -102,7 +114,13 @@ public sealed class NotifierService(
         {
             return await channel.SendAsync(notification, site, cancellationToken);
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("{Channel} send of a {Kind} notification for site {SiteId} was canceled.",
+                channel.GetType().Name, notification.Kind, site.Id);
+            return false;
+        }
+        catch (Exception ex)
         {
             _logger.LogError(ex, "{Channel} failed to send a {Kind} notification for site {SiteId}.",
                 channel.GetType().Name, notification.Kind, site.Id);

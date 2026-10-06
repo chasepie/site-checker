@@ -317,6 +317,69 @@ public sealed class NotificationTests
     }
 
     [TestMethod]
+    public async Task ShutdownAfterDelivery_StillRecordsTheRunAsReported()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await RunChecksAsync(harness, site, Content("baseline"));
+
+        // Shutdown lands just after the alert is delivered.
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        harness.Notifications.AfterSend = shutdown.Cancel;
+        await harness.Runner.RequestCheckAsync(site.Id, Ct);
+        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(Unexpected("boom"));
+        try
+        {
+            await harness.Runner.RunNextAsync(shutdown.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown may surface once the delivery has been recorded.
+        }
+        harness.Notifications.AfterSend = null;
+
+        var failed = (await harness.GetChecksAsync(site.Id, Ct))[^1];
+        Assert.IsNotNull(failed.ReportedAt);
+
+        // After a restart the run is still known to be reported: no repeat, and a Recovery.
+        await harness.RestartAsync();
+        await RunChecksAsync(harness, site, Unexpected("still broken"), Content("baseline"));
+        CollectionAssert.AreEqual(
+            new[] { NotificationKind.Failing, NotificationKind.Recovered },
+            Kinds(harness));
+    }
+
+    [TestMethod]
+    public async Task ChannelCanceledByShutdown_DoesNotLoseAnotherChannelsDelivery()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await RunChecksAsync(harness, site, Content("baseline"));
+
+        // The other channel is mid-send when shutdown cancels it; this channel has already delivered.
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        harness.OtherChannel.BeforeSend = () =>
+        {
+            shutdown.Cancel();
+            shutdown.Token.ThrowIfCancellationRequested();
+        };
+        await harness.Runner.RequestCheckAsync(site.Id, Ct);
+        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(Unexpected("boom"));
+        try
+        {
+            await harness.Runner.RunNextAsync(shutdown.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown may surface once the delivery has been recorded.
+        }
+
+        Assert.AreEqual(NotificationKind.Failing, Assert.ContainsSingle(harness.Notifications.Sent).Kind);
+        var failed = (await harness.GetChecksAsync(site.Id, Ct))[^1];
+        Assert.IsNotNull(failed.ReportedAt);
+    }
+
+    [TestMethod]
     public async Task NoRecovery_WhenTheRunsAlertNeverReachedAChannel()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
