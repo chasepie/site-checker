@@ -9,38 +9,29 @@ namespace SiteChecker.Backend.Notifiers.Pushover;
 /// Sends notifications through Pushover, at the priority the Site configures for the outcome.
 /// Pushover is the only channel that attaches the screenshot.
 /// </summary>
-public sealed class PushoverChannel : INotificationChannel
+public sealed class PushoverChannel(
+    HttpClient httpClient,
+    IConfiguration configuration,
+    ILogger<PushoverChannel> logger)
+    : INotificationChannel
 {
     public const string PushoverUserKey = "PUSHOVER_USER";
     public const string PushoverTokenKey = "PUSHOVER_TOKEN";
     public const int MaxAttachmentSize = 5 * 1024 * 1024; // 5 MB
 
-    private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
-    private readonly ILogger<PushoverChannel> _logger;
-    private readonly string _pushoverUser;
-    private readonly string _pushoverToken;
+    private readonly HttpClient _httpClient = httpClient;
+    private readonly ILogger<PushoverChannel> _logger = logger;
+
+    private readonly string _pushoverUser = configuration.GetValue<string>(PushoverUserKey)
+        ?? throw new InvalidOperationException($"Pushover value ({PushoverUserKey}) is not configured.");
+
+    private readonly string _pushoverToken = configuration.GetValue<string>(PushoverTokenKey)
+        ?? throw new InvalidOperationException($"Pushover value ({PushoverTokenKey}) is not configured.");
 
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-
-    public PushoverChannel(
-        HttpClient httpClient,
-        IConfiguration configuration,
-        ILogger<PushoverChannel> logger)
-    {
-        _httpClient = httpClient;
-        _configuration = configuration;
-        _logger = logger;
-
-        _pushoverUser = _configuration.GetValue<string>(PushoverUserKey)
-            ?? throw new InvalidOperationException($"Pushover value ({PushoverUserKey}) is not configured.");
-
-        _pushoverToken = _configuration.GetValue<string>(PushoverTokenKey)
-            ?? throw new InvalidOperationException($"Pushover value ({PushoverTokenKey}) is not configured.");
-    }
 
     public async Task SendAsync(Notification notification, Site site, CancellationToken cancellationToken)
     {
@@ -56,7 +47,7 @@ public sealed class PushoverChannel : INotificationChannel
             Title = notification.Title,
             Message = notification.Body,
             Priority = (int)priority,
-            Url = notification.SiteUrl.ToString(),
+            Url = notification.SiteLink,
             Attachment = notification.Screenshot,
         }, cancellationToken);
     }

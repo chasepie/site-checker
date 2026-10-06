@@ -1,6 +1,6 @@
 # Site Checker
 
-Self-hosted monitoring that periodically scrapes websites, records what it found, and notifies when content changes or a check fails.
+Self-hosted monitoring that periodically scrapes websites, records what it found, and notifies when content changes, a Site starts failing, or it recovers.
 
 ## Sites and checks
 

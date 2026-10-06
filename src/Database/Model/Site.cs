@@ -35,6 +35,7 @@ public class Site : SiteUpdate
         Url = update.Url;
         UseVpn = update.UseVpn;
         AlwaysTakeScreenshot = update.AlwaysTakeScreenshot;
+        KnownFailuresThreshold = update.KnownFailuresThreshold;
         Schedule.Update(update.Schedule);
         PushoverConfig.Update(update.PushoverConfig);
         DiscordConfig.Update(update.DiscordConfig);

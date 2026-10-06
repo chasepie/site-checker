@@ -28,4 +28,12 @@ public sealed record Notification(
     string Title,
     string Body,
     Uri SiteUrl,
-    byte[]? Screenshot);
+    byte[]? Screenshot)
+{
+    /// <summary>
+    /// <see cref="SiteUrl"/> as a link for a channel: escaped when absolute (unlike
+    /// <see cref="Uri.ToString"/>), and as entered when relative (where
+    /// <see cref="Uri.AbsoluteUri"/> would throw).
+    /// </summary>
+    public string SiteLink => SiteUrl.IsAbsoluteUri ? SiteUrl.AbsoluteUri : SiteUrl.OriginalString;
+}

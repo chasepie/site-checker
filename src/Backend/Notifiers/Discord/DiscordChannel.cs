@@ -30,7 +30,7 @@ public sealed class DiscordChannel(
         {
             Title = notification.Title,
             Description = notification.Body,
-            Url = notification.SiteUrl.AbsoluteUri,
+            Url = notification.SiteLink,
         };
 
         if (_logger.IsEnabled(LogLevel.Trace))
