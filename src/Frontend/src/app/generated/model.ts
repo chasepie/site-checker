@@ -14,6 +14,11 @@ export const CheckStatus = z.enum([
 	"Failed",
 ]);
 
+export const FailureKind = z.enum([
+	"Unexpected",
+	"Known",
+]);
+
 export const PushoverPriority = z.enum([
 	"Normal",
 	"High",
@@ -74,6 +79,8 @@ export const SiteCheck = IEntityWithId.extend({
 	value: z.string().nullable(),
 	vpnLocationId: z.string().nullable(),
 	status: CheckStatus,
+	failureKind: FailureKind.nullable(),
+	reportedAt: z.string().nullable(),
 	startDate: z.string(),
 	doneDate: z.string().nullable(),
 	siteId: z.number(),

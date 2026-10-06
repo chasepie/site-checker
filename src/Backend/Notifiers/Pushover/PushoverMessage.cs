@@ -52,6 +52,18 @@ public class PushoverContents
     public int? Priority { get; set; }
 
     /// <summary>
+    /// For emergency priority (2): how often, in seconds, Pushover retries until acknowledged (minimum 30)
+    /// </summary>
+    [JsonPropertyName("retry")]
+    public int? Retry { get; set; }
+
+    /// <summary>
+    /// For emergency priority (2): how long, in seconds, Pushover keeps retrying (maximum 10800)
+    /// </summary>
+    [JsonPropertyName("expire")]
+    public int? Expire { get; set; }
+
+    /// <summary>
     /// The name of a supported sound to override your default sound choice
     /// </summary>
     [JsonPropertyName("sound")]
