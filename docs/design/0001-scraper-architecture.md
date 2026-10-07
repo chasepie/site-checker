@@ -97,7 +97,7 @@ Scrape Result                                     │
   ▼                                               ┘
 SiteCheckRunner
   saves Succeeded / Failed (+ a Queued retry if requested), notifies (unchanged)
-  marks a VPN rotation due if requested
+  records the failed VPN Location to exclude, if requested
 ```
 
 ### Shared scrape pipeline
@@ -213,10 +213,16 @@ The notification policy doesn't change. A Known Failure doesn't report a Failing
 
 | Action                  | What the runner does |
 | ----------------------- | -------------------- |
-| **Change VPN Location** | Marks a rotation as due, so the next VPN-routed check rotates first instead of waiting for `VPN_CHANGE_INTERVAL`. That rotation excludes the current location (`PiaService.ChangeLocationAsync(excludeCurrent: true)`), so the round-robin doesn't come back to it soon. Exclusion is global: every VPN Site skips the location until every location has been excluded, when `PiaService` resets the list. Ignored when the Site doesn't use the VPN, since rotating would restart the shared container for no benefit. |
+| **Change VPN Location** | Records the VPN Location the failing check ran on (its id, from the Site Check) as one to exclude. Before the next VPN-routed check, under the scrape lock, the runner excludes that location and rotates only if it's still current, instead of waiting for `VPN_CHANGE_INTERVAL`. Ignored when the Site doesn't use the VPN, since rotating would restart the shared container for no benefit. See below. |
 | **Retry**               | Creates a new Queued Site Check for the Site, in the same save as the outcome, instead of waiting for its Schedule. Honored once per Failing Run; later Known Failures in the same run wait for the Schedule, which stops a Site that keeps hitting the same Known Failure from retrying in a loop. |
 
-If a Known Failure requests both Change VPN Location and Retry, the retry runs at the new VPN Location.
+If a Known Failure requests both Change VPN Location and Retry, the retry runs at a different VPN Location from the one that failed.
+
+**Change VPN Location** in detail:
+- **Bound to the location that failed.** The request carries the failed location's id, not "whatever is current". A manual location change can happen between the failed check and the next VPN-routed check, because the scrape lock is released in between. Resolving "current" again at that point would exclude the wrong location, and could send the retry straight back to the one that failed.
+- **Applying it.** Before the next VPN-routed check, the runner excludes each recorded location (a new `PiaService.ExcludeLocation(id)`). It then rotates only if the current location is one of them. If a manual change already moved off the failed location, the request is satisfied and there's no second rotation; the exclusion still applies.
+- **Choosing the next location.** Rotation moves to the next eligible location after the current one in the full list order. Today's `ChangeLocationAsync(excludeCurrent: true)` removes the current location before looking it up, so `FindIndex` returns -1 and it always picks the first eligible location. Stage 1 fixes that.
+- **Exclusion is global and temporary.** Every VPN Site skips an excluded location. `PiaService` resets all exclusions once fewer than 5 locations remain eligible, and exclusions are held in memory, so a restart clears them. A pending request is also in memory; one lost to a restart just means the next rotation happens on `VPN_CHANGE_INTERVAL` as usual.
 
 **Retry** in detail:
 - **No lost retries.** The retry Site Check is created in the same save that records the outcome, so a crash in between can't lose it. A recorded Retry always means a retry was queued, which is what "once per Failing Run" checks. Like every Site Check, it's created by the runner.
@@ -235,6 +241,7 @@ If a Known Failure requests both Change VPN Location and Retry, the retry runs a
 - `Site.TimeoutSeconds`: nullable; `null` uses `SCRAPE_TIMEOUT`. It must leave room under `BROWSERLESS_TIMEOUT` (see Timeout).
 - `SiteCheck.RequestedActions`: the actions a Known Failure requested, shown in the UI and used to tell whether a retry has already been queued in the current Failing Run.
 - `Site.ScraperId` is removed.
+- `SiteCheck.VpnLocationId` stores the VPN Location's id. Today it holds the location's display name despite its name. Change VPN Location needs the stable id, and the UI looks up the name.
 - Site Checks don't record which version of the Scraper produced them, and changing a Site's Scraper isn't marked in history. If the new Scraper produces different content, the next Succeeded check notifies Updated, like any other change.
 
 **API** (`SiteController`)
@@ -356,7 +363,11 @@ The existing test projects (`Backend.Test`, `Scraper.Test`, `Utilities.Test`) ar
 
 **`Backend.IntegrationTests`: runner**, through `SiteCheckRunner`'s public methods with `RunnerHarness` (extended, not mocked):
 - **Retry:** creates the Queued retry in the same save as the outcome, behind any already Queued; is honored only once per Failing Run; runs outside the Schedule window; and counts toward the Known Failure Threshold. A successful retry after an unreported run sends no Recovery but still notifies Updated when the content changed.
-- **Change VPN Location:** makes the next VPN-routed check rotate first, excluding the current location; ignored for a Site that doesn't use the VPN.
+- **Change VPN Location:**
+  - A failure on location A excludes A and makes the next VPN-routed check rotate first; the retry doesn't run on A.
+  - If a manual change without exclusion moves from A to B before the next VPN-routed check, A is excluded, B isn't, there's no second rotation, and the retry runs on B.
+  - Ignored for a Site that doesn't use the VPN.
+  - Rotation after an exclusion moves to the next eligible location after the current one, not the first eligible location.
 - **Scrape lock:** VPN rotation and manual location changes never overlap a scrape or a Test Run.
 - **Known Failure Threshold:** unchanged behavior with Known Failures that carry Requested Actions.
 - **Test Runs:** wait for a running check and never overlap one, create no Site Check, send no notification, and deliver their result to the requesting connection only.
