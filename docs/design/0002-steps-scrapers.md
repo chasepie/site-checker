@@ -47,13 +47,13 @@ A Steps Scraper is an ordered list of steps that run against the page the pipeli
 
 Step timeouts default to Playwright's 30 s (`PlaywrightConsts.DefaultTimeoutMS`), and the whole run is still bounded by the Site's timeout.
 
-**Known Failures** come from the alternatives on a Wait for step, which makes today's `WaitForFirstLocatorAsync` declarative. An alternative can have a grace period before it's considered, because some states only mean something once the page has had time to load. The UI offers today's two checks as presets: **Access Denied** (an `h1` with that text) and **Blank page** (a `body` with no visible children, with the same 10 s grace period as today).
+**Known Failures** come from the alternatives on a Wait for step, which makes today's `WaitForFirstLocatorAsync` declarative. An alternative can have a grace period before it's considered, because some states only mean something once the page has had time to load. The UI offers today's two checks as presets: **Access Denied** (an `h1` with that text) and **Blank page** (a `body` whose only children are `script` or `iframe` elements, today's `body:not(:has(*:not(script):not(iframe)))`, with the same 10 s grace period as today).
 
 **Content** is one `Label: value` line per Extract step, in step order. It's readable in a notification and compares exactly from run to run when the page hasn't changed.
 
 **Validation** on save: at least one Extract step, unique non-empty labels, non-empty selectors, absolute `http`/`https` URLs for Go to URL, and delays shorter than the Site's timeout. Whether a selector actually matches can only be checked against a live page, which is what a Test Run is for.
 
-**Today's Scrapers as steps.** Both are ported to Script Scrapers in stage 1 ([0001](0001-scraper-architecture.md)), but they show that steps can express the existing Sites:
+**Today's Scrapers as steps.** Both are ported to Script Scrapers in stage 1 ([0001](0001-scraper-architecture.md)), but they show that steps can express the existing Sites. The content wouldn't be identical: Extract trims the text and adds a `Label: ` prefix, and `div:text-matches(...)` matches the innermost matching element, while today's `Locator("div", { HasTextRegex })` also matches ancestors.
 
 | Scraper               | Steps                                                                                                                |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------- |

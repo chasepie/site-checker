@@ -30,7 +30,7 @@ From [0001](0001-scraper-architecture.md)'s goals: define a Site "by using a pro
 
 ## Proposed design
 
-The LLM scrapes on every Site Check. The executor gives it the Site's prompt and access to the page the pipeline loaded, and the model ends the run with one structured result: content, or a Known Failure with a message and Requested Actions. Like every executor, it runs under the Site's timeout, which an LLM-driven Site will usually need to raise.
+The LLM scrapes on every Site Check. The executor gives it the Site's prompt and access to the page the pipeline loaded, and the model ends the run with one structured result: content, or a Known Failure with a message and Requested Actions. Like every executor, it runs under the Site's timeout, which an LLM-driven Site will usually need to raise. A Site timeout has to fit under `BROWSERLESS_TIMEOUT` ([0001](0001-scraper-architecture.md)), so a longer one means raising that too, for every Site.
 
 ## Alternatives considered
 
