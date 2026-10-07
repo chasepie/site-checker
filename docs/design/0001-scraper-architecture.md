@@ -221,7 +221,7 @@ If a Known Failure requests both Change VPN Location and Retry, the retry runs a
 **Retry** in detail:
 - **No lost retries.** The retry Site Check is created in the same save that records the outcome, so a crash in between can't lose it. A recorded Retry always means a retry was queued, which is what "once per Failing Run" checks. Like every Site Check, it's created by the runner.
 - **Queue position.** It's Queued like any other request and joins the back of the queue. It doesn't cut ahead of Site Checks that are already Queued, and there's no delay beyond waiting its turn.
-- **Threshold.** The retry is part of the same Failing Run. A Known Failure on the retry counts toward the Known Failure Threshold like any other. A retry that Succeeds ends the run. It notifies Recovered only if the run was already reported: for example when the Known Failure Threshold is 1, or an earlier Unexpected Failure reported it. Otherwise it ends the run silently.
+- **Threshold.** The retry is part of the same Failing Run. A Known Failure on the retry counts toward the Known Failure Threshold like any other. A retry that Succeeds ends the run and follows the normal notification policy. If the run was already reported (for example when the Known Failure Threshold is 1, or an earlier Unexpected Failure reported it), it notifies Recovered, or Recovered and Updated. If the run wasn't reported there's no Recovery, but content that differs from the previous Succeeded check still notifies Updated.
 - **Schedule.** The retry runs even if the Site is now outside its Schedule window, or its Schedule is disabled, because it finishes a check that was allowed to run. It also counts as the Site's latest Site Check for the Due rule, so the next scheduled check comes one interval after the retry.
 - **History.** A retry isn't marked on its own Site Check. The previous check's `RequestedActions` shows that it was requested.
 
@@ -242,7 +242,7 @@ If a Known Failure requests both Change VPN Location and Retry, the retry runs a
 - `POST /api/site` and `PUT /api/site/{id}`: create a Site (today only `DataSeeder` can) and update one, now including `Scraper` and `TimeoutSeconds`. Both take a request body that carries the script source, which is stored in `SiteScript`.
 - `GET /api/site/{id}/script`: the script source, for the read-only view and download.
 - `DELETE /api/site/{id}`: hard delete. Site Checks, screenshots and the script go with it through the required-FK cascade, which `DataSeeder` already relies on.
-  - The cascade bypasses the save interceptor for the Site's checks, so SignalR clients only hear that the Site was deleted. The frontend's Site Check store drops that Site's checks when it sees the Site's Deleted event.
+  - The cascade bypasses the save interceptor for the Site's checks, so SignalR clients only hear that the Site was deleted. The client that sent the DELETE doesn't hear even that, because the interceptor's broadcast skips the requesting connection (`EntityChangesService.GetClients`). The frontend therefore drops the Site's cached checks, and anything derived from them, in two places: after its own successful DELETE (as `deleteAllSiteChecks` already does) and when another tab's delete arrives as the Site's Deleted event.
   - A check still running when its Site is deleted ends in `MarkFailedAsync`, which logs and returns when the check no longer exists. This needs a test.
 - `POST /api/site/test-run`: start a Test Run of an unsaved Scraper and Site settings. The client supplies the test-run id and its SignalR connection id; the endpoint returns `202 Accepted` (see Test Runs).
 - The existing Create Empty Check endpoint on `SiteCheckController` stays, renamed to record a Baseline Reset (`SiteCheckRunner.RecordBaselineResetAsync`, today's `RecordEmptyCheckAsync`). Its behavior doesn't change.
@@ -254,7 +254,7 @@ If a Known Failure requests both Change VPN Location and Retry, the retry runs a
 The frontend can be redesigned as much as these changes need (see Non-goals); the items below are the minimum, not a constraint to fit the current layout.
 
 - A Create Site page.
-- A delete action on the Site details page. The Site Check store drops the deleted Site's checks.
+- A delete action on the Site details page. The Site Check store drops the deleted Site's checks both after its own successful delete and on a Deleted event from another client.
 - In `edit-site`: a test-run panel, a timeout field, and a script file picker with a read-only source view and the compile errors.
 - The Site details page's **Create Empty Check** action becomes **Reset Baseline**.
 
@@ -355,7 +355,7 @@ The existing test projects (`Backend.Test`, `Scraper.Test`, `Utilities.Test`) ar
 - Each script in `samples/DemoScrapers` compiles with the runtime compiler (not just the SDK build). Given a substituted page, it returns the content today's Scraper returns for the same page. The expected values are captured from today's Scrapers before they're deleted, then hard-coded.
 
 **`Backend.IntegrationTests`: runner**, through `SiteCheckRunner`'s public methods with `RunnerHarness` (extended, not mocked):
-- **Retry:** creates the Queued retry in the same save as the outcome, behind any already Queued; is honored only once per Failing Run; runs outside the Schedule window; and counts toward the Known Failure Threshold.
+- **Retry:** creates the Queued retry in the same save as the outcome, behind any already Queued; is honored only once per Failing Run; runs outside the Schedule window; and counts toward the Known Failure Threshold. A successful retry after an unreported run sends no Recovery but still notifies Updated when the content changed.
 - **Change VPN Location:** makes the next VPN-routed check rotate first, excluding the current location; ignored for a Site that doesn't use the VPN.
 - **Scrape lock:** VPN rotation and manual location changes never overlap a scrape or a Test Run.
 - **Known Failure Threshold:** unchanged behavior with Known Failures that carry Requested Actions.
