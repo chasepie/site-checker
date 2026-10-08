@@ -16,7 +16,11 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
   - Deviation: `Scraper.IntegrationTests` is created in commit 3, with its first tests, because a test project with no tests fails `dotnet test`.
 - [x] 2. Domain renames and a fresh migration
   - Deviation: CLAUDE.md's Notifications bullet and ADR 0002 were updated to the new terms here, not in commit 8, because they named the renamed `DoneDate` column.
-- [ ] 3. Scripting contract, runtime compiler and demo scripts
+- [x] 3. Scripting contract, runtime compiler and demo scripts
+  - Deviation: Playwright for .NET throws `System.TimeoutException`; there's no `Microsoft.Playwright.TimeoutException`. Fixed the design doc's example and `PiaLocation.cs` to `catch (TimeoutException)`.
+  - Deviation: the reference set lives in `ScriptCompiler` (built in its constructor) rather than a separate `ScriptReferences`. Besides the framework, it includes the dependency closure of Logging.Abstractions, Playwright and the contract, because Playwright targets netstandard2.0 and its public types need `Microsoft.Bcl.AsyncInterfaces`.
+  - Deviation: `IScriptCompiler` has `Validate(source, fileName)` (compile only, nothing loaded) for the Site validator in commit 6. `ScriptOutcome` exposes `IsKnownFailure`, `Content`, `KnownFailureMessage` and `RequestedActions`, plus `Success(string)` alongside the implicit conversion.
+  - Deviation: `IScriptCompiler` and `ScriptCache` are already registered in `AddScraperServices()`.
 - [ ] 4. Shared pipeline, new model and switchover
 - [ ] 5. Requested Actions, the scrape lock and VPN fixes
 - [ ] 6. Site API and Test Runs (backend)
