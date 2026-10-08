@@ -2,10 +2,10 @@
 
 |             |                                                                                                                       |
 | ----------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Status**  | In Review                                                                                                             |
+| **Status**  | Accepted                                                                                                              |
 | **Author**  | Chase Pietrangelo                                                                                                     |
 | **Created** | 2026-10-06                                                                                                            |
-| **Related** | [ADR 0001](../adr/0001-database-is-the-site-check-queue.md), [ADR 0002](../adr/0002-runner-triggers-notifications.md), [0002 Steps Scrapers](0002-steps-scrapers.md), [0003 Prompt Scrapers](0003-prompt-scrapers.md) |
+| **Related** | [ADR 0001](../adr/0001-database-is-the-site-check-queue.md), [ADR 0002](../adr/0002-runner-triggers-notifications.md), [ADR 0003](../adr/0003-scrapers-are-data.md), [ADR 0004](../adr/0004-scripts-run-in-process-behind-a-trust-boundary.md), [ADR 0005](../adr/0005-scrapers-recognise-known-failures.md), [0002 Steps Scrapers](0002-steps-scrapers.md), [0003 Prompt Scrapers](0003-prompt-scrapers.md) |
 
 > Status lifecycle: `Draft` → `In Review` → `Accepted` | `Rejected` | `Superseded by NNNN`.
 > Once accepted, record each lasting decision as a short ADR in `docs/adr/` that links back here.
@@ -267,7 +267,7 @@ The frontend can be redesigned as much as these changes need (see Non-goals); th
 
 ### Domain vocabulary
 
-Proposed changes to `GLOSSARY.md`, applied once this doc is accepted:
+Changes to `GLOSSARY.md`, applied when this doc was accepted:
 
 - **Scraper** (kept, redefined): what a Site runs to get its content. Each Site has exactly one, of one kind: a **Script Scraper**, **Steps Scraper** or **Prompt Scraper**. It's no longer a class compiled into the app, but the term stays.
 - **Succeeded** (renames **Done**): a Site Check whose scrape produced content. "Done" was ambiguous, because `DoneDate` and `IsComplete` also cover Failed checks; "completed" now means finished either way.
