@@ -12,14 +12,14 @@ using SiteChecker.Database;
 namespace SiteChecker.Database.Migrations
 {
     [DbContext(typeof(SiteCheckerDbContext))]
-    [Migration("20261005024607_RemoveCreatedCheckStatus")]
-    partial class RemoveCreatedCheckStatus
+    [Migration("20261008015727_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.7");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
             modelBuilder.Entity("SiteChecker.Database.Model.Site", b =>
                 {
@@ -109,11 +109,17 @@ namespace SiteChecker.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime?>("DoneDate")
+                    b.Property<DateTime?>("CompletedDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("FailureKind")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Metadata")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReportedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SiteId")
@@ -134,6 +140,8 @@ namespace SiteChecker.Database.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("SiteId");
+
+                    b.HasIndex("Status", "StartDate");
 
                     b.ToTable("SiteChecks");
                 });

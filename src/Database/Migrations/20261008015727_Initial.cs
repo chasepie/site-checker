@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -40,8 +41,10 @@ namespace SiteChecker.Database.Migrations
                     Value = table.Column<string>(type: "TEXT", nullable: true),
                     VpnLocationId = table.Column<string>(type: "TEXT", nullable: true),
                     Status = table.Column<int>(type: "INTEGER", nullable: false),
+                    FailureKind = table.Column<int>(type: "INTEGER", nullable: true),
+                    ReportedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                     StartDate = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    DoneDate = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    CompletedDate = table.Column<DateTime>(type: "TEXT", nullable: true),
                     SiteId = table.Column<int>(type: "INTEGER", nullable: false),
                     Metadata = table.Column<string>(type: "TEXT", nullable: false)
                 },
@@ -80,6 +83,11 @@ namespace SiteChecker.Database.Migrations
                 name: "IX_SiteChecks_SiteId",
                 table: "SiteChecks",
                 column: "SiteId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SiteChecks_Status_StartDate",
+                table: "SiteChecks",
+                columns: new[] { "Status", "StartDate" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_SiteCheckScreenshots_SiteCheckId",

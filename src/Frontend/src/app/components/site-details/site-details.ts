@@ -119,12 +119,12 @@ export class SiteDetails {
     await this._siteCheckStore.deleteAllSiteChecks(site.id);
   }
 
-  protected async createEmptyCheck() {
+  protected async resetBaseline() {
     const site = this.site();
     if (!site) {
       throw new Error('No site selected');
     }
-    await this._siteCheckStore.createEmptyCheck(site.id);
+    await this._siteCheckStore.resetBaseline(site.id);
   }
 
   protected editSite() {

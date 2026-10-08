@@ -9,7 +9,7 @@ public enum CheckStatus
     // Values are pinned because they are persisted; 0 was the retired "Created" status.
     Queued = 1,
     Checking = 2,
-    Done = 3,
+    Succeeded = 3,
     Failed = 4,
 }
 
@@ -50,7 +50,7 @@ public class SiteCheck : IEntityWithId
 
     public required DateTime StartDate { get; set; }
 
-    public required DateTime? DoneDate { get; set; }
+    public required DateTime? CompletedDate { get; set; }
 
     public required int SiteId { get; set; }
 
@@ -61,10 +61,10 @@ public class SiteCheck : IEntityWithId
     public Site Site { get; set; } = null!;
 
     [JsonIgnore]
-    public bool IsSuccess => Status == CheckStatus.Done;
+    public bool IsSuccess => Status == CheckStatus.Succeeded;
 
     [JsonIgnore]
-    public bool IsComplete => Status == CheckStatus.Failed || Status == CheckStatus.Done;
+    public bool IsComplete => Status == CheckStatus.Failed || Status == CheckStatus.Succeeded;
 
     [JsonIgnore]
     public SiteCheckScreenshot? Screenshot { get; set; }
@@ -79,12 +79,12 @@ public class SiteCheck : IEntityWithId
         StartDate = startDate;
     }
 
-    public void Update(Exception ex, DateTime doneDate)
+    public void Update(Exception ex, DateTime completedDate)
     {
         Status = CheckStatus.Failed;
         FailureKind = Model.FailureKind.Unexpected;
         Value = ex.Message;
-        DoneDate = doneDate;
+        CompletedDate = completedDate;
     }
 }
 

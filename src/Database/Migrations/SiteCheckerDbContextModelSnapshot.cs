@@ -106,7 +106,7 @@ namespace SiteChecker.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime?>("DoneDate")
+                    b.Property<DateTime?>("CompletedDate")
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("FailureKind")

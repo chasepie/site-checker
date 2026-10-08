@@ -57,7 +57,7 @@ public sealed class SiteCheckRunnerTests
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(RunnerHarness.AllDaySchedule, Ct);
-        await harness.Runner.RecordEmptyCheckAsync(site.Id, Ct);
+        await harness.Runner.RecordBaselineResetAsync(site.Id, Ct);
 
         harness.Time.Advance(TimeSpan.FromMinutes(14));
         await harness.Runner.QueueDueChecksAsync(Ct);
@@ -77,8 +77,8 @@ public sealed class SiteCheckRunnerTests
         var site = await harness.AddSiteAsync(RunnerHarness.AllDaySchedule, Ct);
         await harness.Runner.QueueDueChecksAsync(Ct);
 
-        // An Empty Check is newer than the open check, so "latest check" alone would look finished.
-        await harness.Runner.RecordEmptyCheckAsync(site.Id, Ct);
+        // A Baseline Reset is newer than the open check, so "latest check" alone would look finished.
+        await harness.Runner.RecordBaselineResetAsync(site.Id, Ct);
         harness.Time.Advance(TimeSpan.FromHours(1));
         await harness.Runner.QueueDueChecksAsync(Ct);
 
@@ -161,24 +161,24 @@ public sealed class SiteCheckRunnerTests
     }
 
     [TestMethod]
-    public async Task RecordEmptyCheck_CreatesDoneCheckWithPlaceholderContent()
+    public async Task RecordBaselineReset_CreatesSucceededCheckWithPlaceholderContent()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
 
-        await harness.Runner.RecordEmptyCheckAsync(site.Id, Ct);
+        await harness.Runner.RecordBaselineResetAsync(site.Id, Ct);
 
         var check = Assert.ContainsSingle(await harness.GetChecksAsync(site.Id, Ct));
-        Assert.AreEqual(CheckStatus.Done, check.Status);
-        Assert.AreEqual("[Empty Check]", check.Value);
-        Assert.IsNotNull(check.DoneDate);
+        Assert.AreEqual(CheckStatus.Succeeded, check.Status);
+        Assert.AreEqual("[Baseline Reset]", check.Value);
+        Assert.IsNotNull(check.CompletedDate);
         Assert.IsEmpty(harness.Scraper.Requests);
     }
 
     // ---- Running ----
 
     [TestMethod]
-    public async Task RunNext_RunsOldestQueuedCheck_ThroughCheckingToDone()
+    public async Task RunNext_RunsOldestQueuedCheck_ThroughCheckingToSucceeded()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var older = await harness.AddSiteAsync(null, Ct);
@@ -205,13 +205,13 @@ public sealed class SiteCheckRunnerTests
         var request = Assert.ContainsSingle(harness.Scraper.Requests);
         Assert.AreEqual(older.ScraperId, request.ScraperId);
 
-        var done = Assert.ContainsSingle(await harness.GetChecksAsync(older.Id, Ct));
-        Assert.AreEqual(CheckStatus.Done, done.Status);
-        Assert.AreEqual("new content", done.Value);
-        Assert.IsNotNull(done.DoneDate);
+        var succeeded = Assert.ContainsSingle(await harness.GetChecksAsync(older.Id, Ct));
+        Assert.AreEqual(CheckStatus.Succeeded, succeeded.Status);
+        Assert.AreEqual("new content", succeeded.Value);
+        Assert.IsNotNull(succeeded.CompletedDate);
         await using (var dbContext = harness.CreateDbContext())
         {
-            var screenshot = await dbContext.SiteCheckScreenshots.SingleAsync(s => s.SiteCheckId == done.Id, Ct);
+            var screenshot = await dbContext.SiteCheckScreenshots.SingleAsync(s => s.SiteCheckId == succeeded.Id, Ct);
             CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, screenshot.Data);
         }
 
@@ -233,7 +233,7 @@ public sealed class SiteCheckRunnerTests
         var check = Assert.ContainsSingle(await harness.GetChecksAsync(site.Id, Ct));
         Assert.AreEqual(CheckStatus.Failed, check.Status);
         Assert.AreEqual("Access Denied", check.Value);
-        Assert.IsNotNull(check.DoneDate);
+        Assert.IsNotNull(check.CompletedDate);
     }
 
     [TestMethod]
@@ -278,7 +278,7 @@ public sealed class SiteCheckRunnerTests
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
-        await harness.Runner.RecordEmptyCheckAsync(site.Id, Ct);
+        await harness.Runner.RecordBaselineResetAsync(site.Id, Ct);
 
         Assert.IsFalse(await harness.Runner.RunNextAsync(Ct));
         Assert.IsEmpty(harness.Scraper.Requests);
@@ -306,7 +306,7 @@ public sealed class SiteCheckRunnerTests
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
 
         var check = Assert.ContainsSingle(await harness.GetChecksAsync(site.Id, Ct));
-        Assert.AreEqual(CheckStatus.Done, check.Status);
+        Assert.AreEqual(CheckStatus.Succeeded, check.Status);
         Assert.AreEqual("recovered", check.Value);
     }
 
@@ -354,7 +354,7 @@ public sealed class SiteCheckRunnerTests
         await using (var dbContext = harness.CreateDbContext())
         {
             dbContext.SiteChecks.AddRange(
-                new SiteCheck(site, startDate) { Status = CheckStatus.Done, Value = "done" },
+                new SiteCheck(site, startDate) { Status = CheckStatus.Succeeded, Value = "done" },
                 new SiteCheck(site, startDate) { Status = CheckStatus.Failed, Value = "failed" },
                 new SiteCheck(site, startDate) { Status = CheckStatus.Checking });
             await dbContext.SaveChangesAsync(Ct);
@@ -364,7 +364,7 @@ public sealed class SiteCheckRunnerTests
 
         var checks = await harness.GetChecksAsync(site.Id, Ct);
         CollectionAssert.AreEqual(
-            new[] { CheckStatus.Done, CheckStatus.Failed, CheckStatus.Done },
+            new[] { CheckStatus.Succeeded, CheckStatus.Failed, CheckStatus.Succeeded },
             checks.Select(c => c.Status).ToList());
         Assert.AreEqual("done", checks[0].Value);
         Assert.AreEqual("failed", checks[1].Value);
@@ -373,7 +373,7 @@ public sealed class SiteCheckRunnerTests
     }
 
     [TestMethod]
-    public async Task DueCheckInterruptedByRestart_IsRecoveredAndRunToDone()
+    public async Task DueCheckInterruptedByRestart_IsRecoveredAndRunToSucceeded()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(RunnerHarness.AllDaySchedule, Ct);
@@ -401,7 +401,7 @@ public sealed class SiteCheckRunnerTests
 
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
         var check = Assert.ContainsSingle(await harness.GetChecksAsync(site.Id, Ct));
-        Assert.AreEqual(CheckStatus.Done, check.Status);
+        Assert.AreEqual(CheckStatus.Succeeded, check.Status);
         Assert.AreEqual("after restart", check.Value);
     }
 }
