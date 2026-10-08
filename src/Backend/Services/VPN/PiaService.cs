@@ -1,89 +1,73 @@
-using System.Text.Json;
-using Docker.DotNet;
-using Docker.DotNet.Models;
-using SiteChecker.Utilities;
-
 namespace SiteChecker.Backend.Services.VPN;
 
-public class PiaService : IDisposable
+/// <summary>
+/// Tracks the VPN Locations, which of them are excluded, and rotation between them. Exclusions are
+/// global (every VPN Site skips an excluded location) and held in memory, so a restart clears them.
+/// Call it through the Site Check Runner when changing location, so a change never overlaps a scrape.
+/// </summary>
+public sealed class PiaService(IPiaContainers containers)
 {
-    private const string PIA_CONTAINER_NAME = nameof(PIA_CONTAINER_NAME);
-    private const string BROWSERLESS_VPN_CONTAINER_NAME = nameof(BROWSERLESS_VPN_CONTAINER_NAME);
+    /// <summary>
+    /// Below this many eligible locations, every exclusion is reset.
+    /// </summary>
+    private const int MinimumEligibleLocations = 5;
 
-    private readonly DockerClient _dockerClient = new DockerClientConfiguration().CreateClient();
-    private readonly string _piaContainerName;
-    private readonly string _brwsrContainerName;
-    private readonly string _piaLocFilePath;
-
-    private bool disposedValue;
+    private readonly IPiaContainers _containers = containers;
     private List<PiaLocation>? _locations;
 
-    public PiaService(IConfiguration configuration)
-    {
-        _piaContainerName = configuration[PIA_CONTAINER_NAME] ?? "/site-checker-vpn";
-        _brwsrContainerName = configuration[BROWSERLESS_VPN_CONTAINER_NAME] ?? "/site-checker-browserless-vpn";
-
-        string piaDir;
-        if (!EnvironmentUtils.IsDockerContainer() && RepoUtils.TryGetRepoDirectory(out var repoDir))
-        {
-            piaDir = Path.Join(repoDir, "site-checker/pia");
-        }
-        else
-        {
-            piaDir = "/pia";
-        }
-        _piaLocFilePath = Path.Join(piaDir, "loc.txt");
-    }
-
+    /// <summary>
+    /// Moves to the next eligible location after the current one, in list order, and restarts the
+    /// VPN containers there.
+    /// </summary>
+    /// <param name="excludeCurrentLocation">Whether to exclude the current location as well.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>The new location, or <see cref="PiaLocation.NoVPN"/> if the VPN isn't running.</returns>
     public async Task<PiaLocation> ChangeLocationAsync(
         bool excludeCurrentLocation,
         CancellationToken cancellationToken = default)
     {
-        if (!await IsVpnContainerRunningAsync(cancellationToken))
+        if (!await _containers.IsVpnRunningAsync(cancellationToken))
         {
             return PiaLocation.NoVPN;
         }
 
         var locations = await GetLocationsAsync(cancellationToken);
-        var eligibleLocations = locations
-            .Where(l => !l.Excluded)
-            .ToList();
-
-        // Reset exclusions if too few locations remain
-        if (eligibleLocations.Count < 5)
+        if (locations.Count(l => !l.Excluded) < MinimumEligibleLocations)
         {
             locations.ForEach(l => l.Excluded = false);
-            eligibleLocations = locations.ToList();
         }
 
         var currentLoc = await GetCurrentLocationAsync(cancellationToken);
         if (excludeCurrentLocation)
         {
             currentLoc.Excluded = true;
-            eligibleLocations.RemoveAll(l => l.Id == currentLoc.Id);
         }
 
-        // Get next location in list
-        var currentPos = eligibleLocations.FindIndex(l => l.Id == currentLoc.Id);
-        var nextLocation = currentPos == eligibleLocations.Count - 1
-            ? eligibleLocations[0]
-            : eligibleLocations[currentPos + 1];
-
-        // Restart VPN container with new location
-        await File.WriteAllTextAsync(_piaLocFilePath, nextLocation.Id, cancellationToken);
-        await RestartContainersAsync(cancellationToken);
-
+        var nextLocation = NextEligibleAfter(locations, currentLoc.Id);
+        await _containers.SetLocationAndRestartAsync(nextLocation.Id, cancellationToken);
         return nextLocation;
+    }
+
+    /// <summary>
+    /// Excludes a location from rotation until exclusions are reset.
+    /// </summary>
+    public void ExcludeLocation(string locationId)
+    {
+        var location = _locations?.FirstOrDefault(l => l.Id == locationId);
+        if (location != null)
+        {
+            location.Excluded = true;
+        }
     }
 
     public async Task<PiaLocation> GetCurrentLocationAsync(CancellationToken cancellationToken)
     {
-        if (!await IsVpnContainerRunningAsync(cancellationToken))
+        if (!await _containers.IsVpnRunningAsync(cancellationToken))
         {
             return PiaLocation.NoVPN;
         }
 
-        var currentLocation = await ReadLocationFileAsync(cancellationToken);
+        var currentLocation = await _containers.ReadCurrentLocationIdAsync(cancellationToken);
         var locations = await GetLocationsAsync(cancellationToken);
         return locations.FirstOrDefault(l => l.Id == currentLocation)
             ?? throw new KeyNotFoundException($"Location '{currentLocation}' not found in locations list");
@@ -91,7 +75,7 @@ public class PiaService : IDisposable
 
     public async Task<List<PiaLocation>> GetAllLocationsAsync(CancellationToken cancellationToken)
     {
-        if (!await IsVpnContainerRunningAsync(cancellationToken))
+        if (!await _containers.IsVpnRunningAsync(cancellationToken))
         {
             return [PiaLocation.NoVPN];
         }
@@ -100,124 +84,37 @@ public class PiaService : IDisposable
         return locations.OrderBy(l => l.Id).ToList();
     }
 
+    /// <summary>
+    /// The first location after <paramref name="currentId"/> in the full list order, wrapping
+    /// around, that isn't excluded. Searching the full list, rather than the eligible ones, keeps the
+    /// rotation moving forward when the current location is itself excluded.
+    /// </summary>
+    private static PiaLocation NextEligibleAfter(List<PiaLocation> locations, string currentId)
+    {
+        if (locations.Count == 0)
+        {
+            throw new InvalidOperationException("PIA listed no VPN Locations to rotate through.");
+        }
+
+        var currentIndex = locations.FindIndex(l => l.Id == currentId);
+        for (var offset = 1; offset <= locations.Count; offset++)
+        {
+            var candidate = locations[(currentIndex + offset) % locations.Count];
+            if (!candidate.Excluded && candidate.Id != currentId)
+            {
+                return candidate;
+            }
+        }
+
+        // No other location is eligible; stay where we are.
+        return locations[Math.Max(currentIndex, 0)];
+    }
+
     private async Task<List<PiaLocation>> GetLocationsAsync(CancellationToken cancellationToken)
     {
-        if (_locations is not null)
-        {
-            return _locations;
-        }
-
-        var createOptions = new CreateContainerParameters()
-        {
-            Image = "thrnz/docker-wireguard-pia",
-            Cmd = ["/scripts/wg-gen.sh", "-a"],
-        };
-
-        var container = await _dockerClient.Containers.CreateContainerAsync(createOptions, cancellationToken);
-        await _dockerClient.Containers.StartContainerAsync(container.ID, new(), cancellationToken);
-        var waitResponse = await _dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
-        if (waitResponse.StatusCode != 0)
-        {
-            throw new InvalidOperationException($"Container exited with code {waitResponse.StatusCode}");
-        }
-
-        var logsParameters = new ContainerLogsParameters
-        {
-            ShowStdout = true,
-            ShowStderr = true,
-            Timestamps = false,
-            Follow = false,
-        };
-        using (var logsStream = await _dockerClient.Containers.GetContainerLogsAsync(container.ID, false, logsParameters, cancellationToken))
-        {
-            (string stdout, string stderr) = await logsStream.ReadOutputToEndAsync(cancellationToken);
-
-            var jsonStart = stdout.IndexOf('{');
-            var innerJson = stdout[jsonStart..].Trim()
-                .Replace("}", "},")
-                .Replace("\"port_forward\"", "\"portForward\"")
-                .TrimEnd(',');
-            var json = '[' + innerJson + ']';
-            var locations = JsonSerializer.Deserialize<List<PiaLocation>>(json)
-                ?? throw new JsonException($"Failed to deserialize locations: {stdout}");
-            _locations = locations
-                .Where(l => l.Id.StartsWith("us_", StringComparison.Ordinal)
-                    || l.Id.StartsWith("us-", StringComparison.Ordinal))
-                .Shuffle()
-                .ToList();
-        }
-        await _dockerClient.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters { Force = true }, cancellationToken);
-        return _locations;
-    }
-
-    private async Task<ContainerListResponse?> GetContainerAsync(string name, CancellationToken ct)
-    {
-        var config = new ContainersListParameters
-        {
-            All = true,
-            Filters = new Dictionary<string, IDictionary<string, bool>>
-            {
-                { "name", new Dictionary<string, bool> { { name, true } } }
-            }
-        };
-        var results = await _dockerClient.Containers.ListContainersAsync(config, ct);
-
-        var containers = results
-            .Where(c => c.Names.Contains(name, StringComparer.InvariantCultureIgnoreCase))
-            .ToList();
-        if (containers.Count > 1)
-        {
-            var names = containers.SelectMany(c => c.Names).ToList();
-            throw new InvalidOperationException($"Found multiple containers with name '{name}': '{string.Join(", ", names)}'");
-        }
-
-        return containers.FirstOrDefault();
-    }
-
-    private async Task<string> ReadLocationFileAsync(
-        CancellationToken cancellationToken)
-    {
-        await IsVpnContainerRunningAsync(cancellationToken);
-        var currentLoc = await File.ReadAllTextAsync(_piaLocFilePath, cancellationToken);
-        return currentLoc.Trim();
-    }
-
-    private async Task RestartContainersAsync(CancellationToken ct)
-    {
-        var vpnContainer = await GetContainerAsync(_piaContainerName, ct);
-        await _dockerClient.Containers.RestartContainerAsync(vpnContainer!.ID, new(), ct);
-
-        var browserlessContainer = await GetContainerAsync(_brwsrContainerName, ct);
-        await _dockerClient.Containers.RestartContainerAsync(browserlessContainer!.ID, new(), ct);
-    }
-
-    private async Task<bool> IsVpnContainerRunningAsync(CancellationToken cancellationToken)
-    {
-        var ctnr = await GetContainerAsync(_brwsrContainerName, cancellationToken);
-        return ctnr?.State == "running";
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!disposedValue)
-        {
-            if (disposing)
-            {
-                _dockerClient.Dispose();
-            }
-
-            disposedValue = true;
-        }
-    }
-
-    public void Dispose()
-    {
-        // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
+        return _locations ??= await _containers.ListLocationsAsync(cancellationToken);
     }
 }
-
 
 public static class PiaServiceExtensions
 {
@@ -225,7 +122,9 @@ public static class PiaServiceExtensions
     {
         public IServiceCollection AddPiaService()
         {
-            return services.AddSingleton<PiaService>();
+            return services
+                .AddSingleton<IPiaContainers, DockerPiaContainers>()
+                .AddSingleton<PiaService>();
         }
     }
 }

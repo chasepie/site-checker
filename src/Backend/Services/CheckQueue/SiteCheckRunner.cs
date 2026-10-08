@@ -4,8 +4,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using SiteChecker.Backend.Extensions;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
+using SiteChecker.Database.Extensions;
 using SiteChecker.Database.Model;
 using SiteChecker.Scraper;
+using ScriptAction = SiteChecker.Scripting.RequestedAction;
 
 namespace SiteChecker.Backend.Services.CheckQueue;
 
@@ -17,6 +19,11 @@ namespace SiteChecker.Backend.Services.CheckQueue;
 /// The database is the queue (see <c>docs/adr/0001-database-is-the-site-check-queue.md</c>):
 /// pending work is every Site Check in the <see cref="CheckStatus.Queued"/> status. The
 /// in-memory wake signal only shortens the wait for new work and holds no state.
+/// <para>
+/// One scrape lock covers everything that uses the shared browser and VPN containers: resolving
+/// and rotating the VPN Location, scraping, Test Runs, and manual VPN Location changes (which
+/// restart the containers). They never overlap.
+/// </para>
 /// </remarks>
 public sealed class SiteCheckRunner : IDisposable
 {
@@ -40,6 +47,18 @@ public sealed class SiteCheckRunner : IDisposable
     /// Serializes creation of open Site Checks so a Site never gets two at once.
     /// </summary>
     private readonly SemaphoreSlim _createLock = new(1, 1);
+
+    /// <summary>
+    /// Held around everything that uses the shared browser and VPN containers.
+    /// </summary>
+    private readonly SemaphoreSlim _scrapeLock = new(1, 1);
+
+    /// <summary>
+    /// VPN Locations a Known Failure asked to move off (Change VPN Location), applied before the
+    /// next VPN-routed check. In memory only: one lost to a restart just waits for the interval.
+    /// </summary>
+    private readonly HashSet<string> _failedVpnLocationIds = [];
+    private readonly Lock _failedVpnLocationIdsLock = new();
 
     /// <summary>
     /// Capacity of one, so any number of wake-ups before the next wait collapse into one.
@@ -269,7 +288,58 @@ public sealed class SiteCheckRunner : IDisposable
         }
     }
 
-    public void Dispose() => _createLock.Dispose();
+    /// <summary>
+    /// Changes the VPN Location now, waiting for any running scrape first, since it restarts the
+    /// containers that scrape uses.
+    /// </summary>
+    /// <param name="excludeCurrent">Whether to also exclude the current location from rotation.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>The new VPN Location.</returns>
+    public async Task<PiaLocation> ChangeVpnLocationAsync(bool excludeCurrent, CancellationToken cancellationToken)
+    {
+        await _scrapeLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await ChangeVpnLocationCoreAsync(excludeCurrent, cancellationToken);
+        }
+        finally
+        {
+            _scrapeLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Runs a Test Run: a scrape that isn't a Site Check. It waits for any running check, uses
+    /// the current VPN Location without rotating, and records nothing, notifies nothing and
+    /// carries out none of its Requested Actions.
+    /// </summary>
+    /// <param name="request">The scrape, with no Site Check ID. Its browser is chosen here.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>The scrape's result.</returns>
+    public async Task<ScrapeResult> RunTestAsync(ScrapeRequest request, CancellationToken cancellationToken)
+    {
+        if (!request.IsTestRun)
+        {
+            throw new ArgumentException("A Test Run has no Site Check.", nameof(request));
+        }
+
+        await _scrapeLock.WaitAsync(cancellationToken);
+        try
+        {
+            var browserType = _scraperService.GetBrowserType(request.Site.UseVpn);
+            return await _scraperService.ScrapeAsync(request with { BrowserType = browserType }, cancellationToken);
+        }
+        finally
+        {
+            _scrapeLock.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _createLock.Dispose();
+        _scrapeLock.Dispose();
+    }
 
     private void Wake() => _wakeSignal.Writer.TryWrite(true);
 
@@ -364,29 +434,57 @@ public sealed class SiteCheckRunner : IDisposable
             .FirstAsync(sc => sc.Id == siteCheckId, cancellationToken);
         var site = siteCheck.Site;
 
-        var browserType = _scraperService.GetBrowserType(site.UseVpn);
-        siteCheck.VpnLocationId = (await GetVpnLocationAsync(browserType, cancellationToken))?.Id;
-
-        // Save before scraping so clients receive a real-time status update via SignalR while the
-        // (potentially long-running) scrape is in progress. An EF Core SaveChanges interceptor
-        // hooks into every save and automatically broadcasts entity changes to all connected clients.
-        // The claim set Checking without the interceptor, and a re-run orphan may already hold this
-        // location, so force a tracked change to guarantee the broadcast.
-        dbContext.Entry(siteCheck).Property(sc => sc.Status).IsModified = true;
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        var request = new ScrapeRequest
+        BrowserType browserType;
+        ScrapeResult result;
+        await _scrapeLock.WaitAsync(cancellationToken);
+        try
         {
-            SiteCheckId = siteCheck.Id,
-            Site = new ScrapeSite(site.Id, site.Name, site.Url, site.UseVpn),
-            Scraper = ToScraperSpec(site),
-            BrowserType = browserType,
-            Timeout = site.TimeoutSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
-            AlwaysTakeScreenshot = site.AlwaysTakeScreenshot,
-        };
+            browserType = _scraperService.GetBrowserType(site.UseVpn);
+            siteCheck.VpnLocationId = (await ResolveVpnLocationAsync(browserType, cancellationToken))?.Id;
 
-        var result = await _scraperService.ScrapeAsync(request, cancellationToken);
-        siteCheck.Update(result, _timeProvider.GetUtcNow().UtcDateTime);
+            // Save before scraping so clients receive a real-time status update via SignalR while the
+            // (potentially long-running) scrape is in progress. An EF Core SaveChanges interceptor
+            // hooks into every save and automatically broadcasts entity changes to all connected clients.
+            // The claim set Checking without the interceptor, and a re-run orphan may already hold this
+            // location, so force a tracked change to guarantee the broadcast.
+            dbContext.Entry(siteCheck).Property(sc => sc.Status).IsModified = true;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            var request = new ScrapeRequest
+            {
+                SiteCheckId = siteCheck.Id,
+                Site = new ScrapeSite(site.Id, site.Name, site.Url, site.UseVpn),
+                Scraper = ToScraperSpec(site),
+                BrowserType = browserType,
+                Timeout = site.TimeoutSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+                AlwaysTakeScreenshot = site.AlwaysTakeScreenshot,
+            };
+
+            result = await _scraperService.ScrapeAsync(request, cancellationToken);
+        }
+        finally
+        {
+            _scrapeLock.Release();
+        }
+
+        await RecordOutcomeAsync(dbContext, siteCheck, result, browserType, cancellationToken);
+    }
+
+    /// <summary>
+    /// Saves the scrape's outcome and screenshot, and carries out the Requested Actions of a Known
+    /// Failure: a Retry is queued in the same save, so a crash can't lose it, and a failed VPN
+    /// Location is excluded before the next VPN-routed check. Only the actions carried out are
+    /// recorded on the Site Check.
+    /// </summary>
+    private async Task RecordOutcomeAsync(
+        SiteCheckerDbContext dbContext,
+        SiteCheck siteCheck,
+        ScrapeResult result,
+        BrowserType browserType,
+        CancellationToken cancellationToken)
+    {
+        var completedDate = _timeProvider.GetUtcNow().UtcDateTime;
+        siteCheck.Update(result, completedDate);
 
         if (result.Screenshot is not null)
         {
@@ -394,7 +492,79 @@ public sealed class SiteCheckRunner : IDisposable
             await dbContext.SiteCheckScreenshots.AddAsync(screenshot, cancellationToken);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var requested = result.Outcome == ScrapeOutcome.KnownFailure ? result.RequestedActions : [];
+
+        // Ignored for a Site that doesn't use the VPN: rotating would restart the shared container
+        // for no benefit.
+        var failedVpnLocationId = requested.Contains(ScriptAction.ChangeVpnLocation)
+            && browserType == BrowserType.BrowserlessVpn
+            && siteCheck.VpnLocationId is { } locationId
+            && locationId != PiaLocation.NoVPN.Id
+                ? locationId
+                : null;
+
+        var carriedOut = new List<RequestedAction>();
+        if (failedVpnLocationId != null)
+        {
+            carriedOut.Add(RequestedAction.ChangeVpnLocation);
+        }
+
+        var queuedRetry = false;
+        if (requested.Contains(ScriptAction.Retry))
+        {
+            // Like any open Site Check, the retry is created under the create lock.
+            await _createLock.WaitAsync(cancellationToken);
+            try
+            {
+                if (!await RetriedInFailingRunAsync(dbContext, siteCheck, completedDate, cancellationToken))
+                {
+                    carriedOut.Add(RequestedAction.Retry);
+                    dbContext.SiteChecks.Add(new SiteCheck(siteCheck.Site, completedDate));
+                    queuedRetry = true;
+                }
+
+                siteCheck.RequestedActions = carriedOut;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            finally
+            {
+                _createLock.Release();
+            }
+        }
+        else
+        {
+            siteCheck.RequestedActions = carriedOut;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        if (failedVpnLocationId != null)
+        {
+            lock (_failedVpnLocationIdsLock)
+            {
+                _failedVpnLocationIds.Add(failedVpnLocationId);
+            }
+        }
+
+        if (queuedRetry)
+        {
+            Wake();
+        }
+    }
+
+    /// <summary>
+    /// Whether a check earlier in the Site's current Failing Run already queued a Retry. A Retry
+    /// is honored once per Failing Run, so a Site that keeps hitting the same Known Failure can't
+    /// retry in a loop.
+    /// </summary>
+    private static async Task<bool> RetriedInFailingRunAsync(
+        SiteCheckerDbContext dbContext,
+        SiteCheck siteCheck,
+        DateTime completedDate,
+        CancellationToken cancellationToken)
+    {
+        var (_, failingRun) = await dbContext.SiteChecks.FailingRunBeforeAsync(
+            siteCheck.SiteId, completedDate, siteCheck.Id, cancellationToken);
+        return await failingRun.AnyAsync(sc => sc.RequestedActions.Contains(RequestedAction.Retry), cancellationToken);
     }
 
     /// <exception cref="InvalidOperationException">The Site's Scraper is missing its payload or source.</exception>
@@ -431,33 +601,56 @@ public sealed class SiteCheckRunner : IDisposable
     }
 
     /// <summary>
-    /// Resolves the VPN Location the check runs on, or <c>null</c> if it doesn't use the VPN. May
-    /// change the VPN Location first, if the configured interval has elapsed.
+    /// Resolves the VPN Location the check runs on, or <c>null</c> if it doesn't use the VPN. Called
+    /// under the scrape lock. First excludes every location a Known Failure asked to move off, and
+    /// rotates if the current location is one of them, or if the configured interval has elapsed.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown if an unsupported browser type is encountered.</exception>
-    private async Task<PiaLocation?> GetVpnLocationAsync(BrowserType browserType, CancellationToken cancellationToken)
+    private async Task<PiaLocation?> ResolveVpnLocationAsync(BrowserType browserType, CancellationToken cancellationToken)
     {
         if (browserType is BrowserType.Local or BrowserType.Browserless)
         {
             return null;
         }
 
-        if (browserType == BrowserType.BrowserlessVpn)
+        if (browserType != BrowserType.BrowserlessVpn)
         {
-            return _timeProvider.GetElapsedTime(_lastVpnChangeTimestamp) >= _vpnChangeInterval
-                ? await ChangeVpnRegionAsync(cancellationToken)
-                : await _piaService.GetCurrentLocationAsync(cancellationToken);
+            throw new InvalidOperationException($"Unsupported browser type: {browserType}");
         }
 
-        throw new InvalidOperationException($"Unsupported browser type: {browserType}");
+        string[] failedLocationIds;
+        lock (_failedVpnLocationIdsLock)
+        {
+            failedLocationIds = [.. _failedVpnLocationIds];
+            _failedVpnLocationIds.Clear();
+        }
+        foreach (var locationId in failedLocationIds)
+        {
+            _piaService.ExcludeLocation(locationId);
+        }
+
+        // Bound to the location that failed, not "whatever is current": if a manual change
+        // already moved off it, the request is satisfied and there's no second rotation.
+        var current = await _piaService.GetCurrentLocationAsync(cancellationToken);
+        if (failedLocationIds.Contains(current.Id)
+            || _timeProvider.GetElapsedTime(_lastVpnChangeTimestamp) >= _vpnChangeInterval)
+        {
+            return await ChangeVpnLocationCoreAsync(excludeCurrent: false, cancellationToken);
+        }
+        return current;
     }
 
-    private async Task<PiaLocation> ChangeVpnRegionAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Changes the VPN Location. Called under the scrape lock.
+    /// </summary>
+    private async Task<PiaLocation> ChangeVpnLocationCoreAsync(bool excludeCurrent, CancellationToken cancellationToken)
     {
+        // Before the change, so a failing change waits for the next interval instead of being
+        // retried before every check.
         _lastVpnChangeTimestamp = _timeProvider.GetTimestamp();
 
-        var newLocation = await _piaService.ChangeLocationAsync(false, cancellationToken);
-        _logger.LogInformation("VPN region changed to {Region}.", newLocation.Name);
+        var newLocation = await _piaService.ChangeLocationAsync(excludeCurrent, cancellationToken);
+        _logger.LogInformation("VPN Location changed to {Location}.", newLocation.Name);
         return newLocation;
     }
 }

@@ -299,6 +299,7 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 @Injectable({ providedIn: 'root'}) export class VpnController
 {
 	private _httpClient: HttpClient = inject(HttpClient);
+	/** Changes the VPN Location, after any running check finishes. */
 	public async changeLocation(excludeCurrent: boolean) 
 	{
 		const obs$ = this._httpClient.request(

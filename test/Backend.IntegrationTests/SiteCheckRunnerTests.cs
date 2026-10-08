@@ -276,6 +276,28 @@ public sealed class SiteCheckRunnerTests
     }
 
     [TestMethod]
+    public async Task RunNext_WhenTheSiteIsDeletedMidCheck_EndsWithoutThrowing()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await harness.Runner.RequestCheckAsync(site.Id, Ct);
+        harness.Scraper.OnScrape = async _ =>
+        {
+            // The Site's checks go with it, through the required-FK cascade.
+            await using var dbContext = harness.CreateDbContext();
+            dbContext.Sites.Remove(await dbContext.Sites.SingleAsync(s => s.Id == site.Id, Ct));
+            await dbContext.SaveChangesAsync(Ct);
+            return ScrapeResult.Succeeded("orphaned");
+        };
+
+        Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
+
+        Assert.IsEmpty(await harness.GetChecksAsync(site.Id, Ct));
+        Assert.IsEmpty(harness.Notifications.Sent);
+        Assert.IsFalse(await harness.Runner.RunNextAsync(Ct));
+    }
+
+    [TestMethod]
     public async Task RunNext_ReturnsFalse_WhenNothingIsQueued()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
