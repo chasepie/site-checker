@@ -11,6 +11,8 @@ using SiteChecker.Backend.Services;
 using SiteChecker.Backend.Services.CheckQueue;
 using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.SignalR;
+using SiteChecker.Backend.Services.Sites;
+using SiteChecker.Backend.Services.TestRuns;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database;
 using SiteChecker.Database.Services;
@@ -90,6 +92,8 @@ public class Program
 
         services.AddScraperServices();
         services.AddScoped<DemoDataSeeder>();
+        services.AddSingleton<SiteValidator>();
+        services.AddSingleton<TestRunService>();
 
         services.AddSiteCheckRunner();
 

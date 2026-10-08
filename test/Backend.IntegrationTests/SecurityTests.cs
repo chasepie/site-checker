@@ -9,6 +9,8 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Hosting;
 using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.SignalR;
+using SiteChecker.Database.Model;
+using SiteChecker.Scraper.Scripts;
 
 /// <summary>
 /// The login, the antiforgery and rate limits around it, trusted proxies, the hub's origin check,
@@ -104,7 +106,7 @@ public sealed class SecurityTests
         await using var factory = new SiteApiFactory();
         using var client = await factory.CreateLoggedInClientAsync(Ct);
         client.DefaultRequestHeaders.Remove(SecurityExtensions.AntiforgeryHeaderName);
-        var siteId = await FirstSiteIdAsync(factory);
+        var siteId = await AddSiteAsync(factory);
 
         var response = await client.PostAsync($"/api/site/{siteId}/check", content: null, Ct);
 
@@ -117,7 +119,7 @@ public sealed class SecurityTests
     {
         await using var factory = new SiteApiFactory();
         using var client = await factory.CreateLoggedInClientAsync(Ct);
-        var siteId = await FirstSiteIdAsync(factory);
+        var siteId = await AddSiteAsync(factory);
 
         var response = await client.PostAsync($"/api/site/{siteId}/check", content: null, Ct);
 
@@ -129,7 +131,7 @@ public sealed class SecurityTests
     {
         await using var factory = new SiteApiFactory();
         using var client = await factory.CreateLoggedInClientAsync(Ct);
-        var siteId = await FirstSiteIdAsync(factory);
+        var siteId = await AddSiteAsync(factory);
         var token = client.DefaultRequestHeaders.GetValues(SecurityExtensions.AntiforgeryHeaderName).Single();
         client.DefaultRequestHeaders.Remove(SecurityExtensions.AntiforgeryHeaderName);
 
@@ -406,7 +408,7 @@ public sealed class SecurityTests
             [AdminPassword.AdminPasswordKey] = null,
         });
         using var client = factory.CreateClient();
-        var siteId = await FirstSiteIdAsync(factory);
+        var siteId = await AddSiteAsync(factory);
 
         var sessionResponse = await client.GetAsync("/api/auth/session", Ct);
         var session = JsonNode.Parse(await sessionResponse.Content.ReadAsStringAsync(Ct))!;
@@ -532,12 +534,26 @@ public sealed class SecurityTests
     }
 
     /// <summary>
-    /// One of the Sites startup seeds.
+    /// Adds a Site to write to, since the factory seeds none.
     /// </summary>
-    private async Task<int> FirstSiteIdAsync(SiteApiFactory factory)
+    private async Task<int> AddSiteAsync(SiteApiFactory factory)
     {
+        const string source = "// Never run: the factory's scraper is a fake.";
+        var site = new Site
+        {
+            Name = "Example",
+            Url = new Uri("https://example.com/"),
+            Scraper = new ScraperDefinition
+            {
+                Kind = ScraperKind.Script,
+                Script = new ScriptScraper { FileName = "Example.cs", SourceHash = ScriptSource.Hash(source), UploadedAt = DateTime.UtcNow },
+            },
+            SiteScript = new SiteScript { Source = source },
+        };
         await using var dbContext = factory.CreateDbContext();
-        return await dbContext.Sites.Select(site => site.Id).FirstAsync(Ct);
+        dbContext.Sites.Add(site);
+        await dbContext.SaveChangesAsync(Ct);
+        return site.Id;
     }
 
     private async Task<bool> AnySiteCheckAsync(SiteApiFactory factory)

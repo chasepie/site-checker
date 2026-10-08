@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SiteChecker.Backend.Services;
 using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.SignalR;
 using SiteChecker.Database;
@@ -20,8 +21,7 @@ using SiteChecker.Scraper;
 
 /// <summary>
 /// The real app over an in-memory SQLite database (otherwise it would use the repo's
-/// <c>site-checker/data</c> file), with no background services and a fake scraper. Startup seeds
-/// its Sites as usual.
+/// <c>site-checker/data</c> file), with demo data off, no background services, and a fake scraper.
 /// Its password is <see cref="Password"/>: <see cref="CreateLoggedInClientAsync"/> logs in with it,
 /// and <c>CreateClient()</c> gives a client that isn't logged in. Cookie keys go to a temporary
 /// directory, deleted with the factory, rather than the repo's data directory. A request carrying
@@ -51,6 +51,7 @@ internal sealed class SiteApiFactory(
     private readonly string _environment = environment ?? Environments.Development;
     private readonly Dictionary<string, string?> _settings = new(StringComparer.OrdinalIgnoreCase)
     {
+        [DemoDataSeeder.SeedDemoDataKey] = "false",
         [AdminPassword.AdminPasswordKey] = Password,
         // Cleared, so the developer's .env, which startup loads, can't change what tests see.
         [SecurityExtensions.AllowedHostsKey] = null,

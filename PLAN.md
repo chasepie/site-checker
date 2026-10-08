@@ -31,7 +31,10 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
   - Deviation: the shared history query is `SiteCheckHistory.FailingRunBeforeAsync` (in `src/Database/Extensions/SiteCheckHistory.cs`), returning the Baseline check and the Failing Run so far.
   - Deviation: `DockerPiaContainers` keeps the US-only filter and the shuffle (it's what lists locations); `PiaService` keeps the order it's given, so tests can predict rotation. `VpnController` uses the `CancellationToken` property convention now.
   - Deviation: CLAUDE.md's Site Check lifecycle section got the scrape lock and Requested Actions here.
-- [ ] 6. Site API and Test Runs (backend)
+- [x] 6. Site API and Test Runs (backend)
+  - Deviation: fixed a pre-existing bug in `ControllerGenerator`. Void actions generated `z.void().parse(result)`, which throws on the `null` Angular returns for an empty body, so `deleteSiteCheck`/`deleteAllSiteChecks` threw after succeeding. Void actions are no longer parsed, and a bare (non-`Task`) `ActionResult` return now resolves to void.
+  - Deviation: `ScriptUpload` requires both `FileName` and `Source`; on update, a `null` `ScraperRequest.Script` keeps the current script. `TestRunRequest.Name` is optional. `TestRunResult.DurationMilliseconds` is an `int`, because `long` maps to `string` in the type bridge.
+  - Deviation: `SiteStore.updateSite` now sends a `SiteRequest` with `script: null`, so the frontend compiles until commit 7 replaces the editor.
 - [ ] 7. Frontend
 - [ ] 8. Release workflow and docs
 - [ ] Remove `PLAN.md`, then open the PR

@@ -5,7 +5,7 @@ import {
   withMethods, withProps, withState
 } from '@ngrx/signals';
 import { setAllEntities } from '@ngrx/signals/entities';
-import { Site, SiteController, SiteUpdate } from '../generated/model';
+import { Site, SiteController, SiteRequest } from '../generated/model';
 import { withCrudEntities } from './base.store';
 import { sitecheckSort, SiteCheckStore } from './site-check.store';
 
@@ -63,8 +63,10 @@ export const SiteStore = signalStore(
       patchState(store, { _selectedSiteId: site.id });
     },
 
-    updateSite: async (siteUpdate: SiteUpdate) => {
-      const updated = await store._controller.updateSite(siteUpdate.id, siteUpdate);
+    updateSite: async (site: Site) => {
+      // Without a script, the Site keeps its current one.
+      const request: SiteRequest = { ...site, scraper: { kind: site.scraper.kind, script: null } };
+      const updated = await store._controller.updateSite(site.id, request);
       store._upsertInCache(updated);
     },
   })),
