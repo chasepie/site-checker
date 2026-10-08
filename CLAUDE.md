@@ -69,7 +69,7 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 
 ### Type bridge (C# → TypeScript)
 - `Backend/Generators/ReinforcedTypingsConfiguration.cs` generates `src/Frontend/src/app/generated/model.ts` at build time. It contains Zod schemas plus inferred TypeScript types for models and enums, an injectable Angular client class per API controller (every `ControllerBase` in `SiteChecker.Backend.Controllers`, so the frontend calls e.g. `SiteCheckController.createSiteCheck()`), and `SignalRConstants`.
-- **Never hand-edit `model.ts`.** A new property on an exported model appears after a rebuild, but a **new model or enum type must be added to the lists in `ReinforcedTypingsConfiguration`**. XML doc comments on controller actions are copied into the generated client.
+- **Never hand-edit `model.ts`.** A new property on an exported model appears after a rebuild, but a **new model or enum type must be added to the lists in `ReinforcedTypingsConfiguration`**. XML doc comments on controller actions are copied into the generated client. Responses are validated with the return type's Zod schema, except for void actions (`ActionResult`), whose empty body isn't parsed.
 - Enums are serialized as strings (`JsonStringEnumConverter`). `CheckStatus` values are pinned because they're stored as integers.
 
 ### Frontend
@@ -90,7 +90,8 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 ### Testing
 - Use MSTest v4 only (no xUnit, NUnit, or Jest). The MSTest analyzers run in `Recommended` mode with warnings as errors, so use the specific asserts (`Assert.HasCount`, `Assert.ContainsSingle`, `Assert.IsEmpty`) and pass `TestContext.CancellationToken`.
 - Test projects are split by category, and the name says which: `*.UnitTests` (fast, no database or Roslyn) and `*.IntegrationTests` (real SQLite, real compilation). Both run in CI.
-- `test/Backend.IntegrationTests` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` (in `test/Backend.UnitTests`) cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF.
+- `test/Backend.IntegrationTests` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` (in `test/Backend.UnitTests`) cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF. `harness.Vpn` fakes the VPN containers under the real `PiaService`.
+- API tests use `SiteApiFactory` (`WebApplicationFactory<Program>`): the real app over in-memory SQLite, with demo data off, the app's background services removed, and a fake `IScraperService`.
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.

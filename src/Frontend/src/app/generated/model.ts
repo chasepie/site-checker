@@ -123,6 +123,18 @@ export const SiteCheckScreenshot = IEntityWithId.extend({
 });
 export type SiteCheckScreenshot = z.infer<typeof SiteCheckScreenshot>;
 
+export const SiteScript = z.object({
+	siteId: z.number(),
+	source: z.string(),
+});
+export type SiteScript = z.infer<typeof SiteScript>;
+
+export const ScrapeOutcome = z.enum([
+	"Succeeded",
+	"KnownFailure",
+	"UnexpectedFailure",
+]);
+
 export const IEntityChange = z.object({
 	entityTypeName: z.string(),
 	entityId: z.number(),
@@ -155,6 +167,62 @@ export const PiaLocation = z.object({
 	excluded: z.boolean(),
 });
 export type PiaLocation = z.infer<typeof PiaLocation>;
+
+export const ScriptDiagnostic = z.object({
+	fileName: z.string(),
+	line: z.number(),
+	column: z.number(),
+	id: z.string(),
+	message: z.string(),
+});
+export type ScriptDiagnostic = z.infer<typeof ScriptDiagnostic>;
+
+export const ScriptUpload = z.object({
+	fileName: z.string(),
+	source: z.string(),
+});
+export type ScriptUpload = z.infer<typeof ScriptUpload>;
+
+export const ScraperRequest = z.object({
+	kind: ScraperKind,
+	script: ScriptUpload.nullable(),
+});
+export type ScraperRequest = z.infer<typeof ScraperRequest>;
+
+export const SiteRequest = SiteUpdate.extend({
+	scraper: ScraperRequest,
+});
+export type SiteRequest = z.infer<typeof SiteRequest>;
+
+export const SiteValidationResult = z.object({
+	errors: z.array(z.string()),
+	diagnostics: z.array(ScriptDiagnostic),
+});
+export type SiteValidationResult = z.infer<typeof SiteValidationResult>;
+
+export const TestRunRequest = z.object({
+	testRunId: z.string(),
+	connectionId: z.string(),
+	name: z.string().nullable(),
+	url: z.string(),
+	useVpn: z.boolean(),
+	alwaysTakeScreenshot: z.boolean(),
+	timeoutSeconds: z.number().nullable(),
+	scraper: ScraperRequest,
+});
+export type TestRunRequest = z.infer<typeof TestRunRequest>;
+
+export const TestRunResult = z.object({
+	testRunId: z.string(),
+	outcome: ScrapeOutcome,
+	content: z.string().nullable(),
+	message: z.string().nullable(),
+	requestedActions: z.array(RequestedAction),
+	diagnostics: z.array(ScriptDiagnostic),
+	screenshot: z.string().nullable(),
+	durationMilliseconds: z.number(),
+});
+export type TestRunResult = z.infer<typeof TestRunResult>;
 
 @Injectable({ providedIn: 'root'}) export class SiteCheckController
 {
@@ -236,8 +304,7 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 				body: null
 			}
 		);
-		const result = await lastValueFrom(obs$);
-		z.void().parse(result);
+		await lastValueFrom(obs$);
 	}
 	public async deleteSiteCheck(siteId: number, id: number) 
 	{
@@ -249,8 +316,7 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 				body: null
 			}
 		);
-		const result = await lastValueFrom(obs$);
-		z.void().parse(result);
+		await lastValueFrom(obs$);
 	}
 }
 @Injectable({ providedIn: 'root'}) export class SiteController
@@ -282,18 +348,76 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 		const result = await lastValueFrom(obs$);
 		return Site.parse(result);
 	}
-	public async updateSite(id: number, siteUpdate: SiteUpdate) 
+	/** Creates a Site with its Scraper. A script that doesn't compile is rejected with its errors. */
+	public async createSite(siteRequest: SiteRequest) 
+	{
+		const obs$ = this._httpClient.request(
+			'POST',
+			`api/Site`,
+			{
+				params: {},
+				body: siteRequest
+			}
+		);
+		const result = await lastValueFrom(obs$);
+		return Site.parse(result);
+	}
+	/** Updates a Site's settings and Scraper. Without a script, the Site keeps its current one. */
+	public async updateSite(id: number, siteRequest: SiteRequest) 
 	{
 		const obs$ = this._httpClient.request(
 			'PUT',
 			`api/Site/${id}`,
 			{
 				params: {},
-				body: siteUpdate
+				body: siteRequest
 			}
 		);
 		const result = await lastValueFrom(obs$);
 		return Site.parse(result);
+	}
+	/** Deletes a Site, with its Site Checks, screenshots and script. */
+	public async deleteSite(id: number) 
+	{
+		const obs$ = this._httpClient.request(
+			'DELETE',
+			`api/Site/${id}`,
+			{
+				params: {},
+				body: null
+			}
+		);
+		await lastValueFrom(obs$);
+	}
+	/** The Site's script source, for viewing and downloading. */
+	public async getSiteScript(id: number) 
+	{
+		const obs$ = this._httpClient.request(
+			'GET',
+			`api/Site/${id}/script`,
+			{
+				params: {},
+				body: null
+			}
+		);
+		const result = await lastValueFrom(obs$);
+		return SiteScript.parse(result);
+	}
+	/**
+	* Starts a Test Run of an unsaved Scraper and Site settings. The result is sent to the given
+	*             SignalR connection only, as OnTestRunCompleted.
+	*/
+	public async startTestRun(testRunRequest: TestRunRequest) 
+	{
+		const obs$ = this._httpClient.request(
+			'POST',
+			`api/Site/test-run`,
+			{
+				params: {},
+				body: testRunRequest
+			}
+		);
+		await lastValueFrom(obs$);
 	}
 }
 @Injectable({ providedIn: 'root'}) export class VpnController
@@ -345,6 +469,7 @@ export const SignalRConstants = {
 	OnEntityUpdatedKey: 'OnEntityUpdated',
 	OnEntityDeletedKey: 'OnEntityDeleted',
 	OnLocationChangedKey: 'OnLocationChanged',
+	OnTestRunCompletedKey: 'OnTestRunCompleted',
 	UserID: 'SiteChecker-SignalR-Id',
 	HubName: 'dataHub',
 } as const;
