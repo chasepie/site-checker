@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using SiteChecker.Backend.Services.CheckQueue;
 using SiteChecker.Backend.Services.VPN;
 
 namespace SiteChecker.Backend.Controllers;
@@ -6,32 +7,34 @@ namespace SiteChecker.Backend.Controllers;
 [Route("api/[controller]")]
 [ApiController]
 public class VpnController(
-    ILogger<VpnController> logger,
-    PiaService piaService)
+    PiaService piaService,
+    SiteCheckRunner runner)
     : ControllerBase
 {
     private readonly PiaService _piaService = piaService;
-    private readonly ILogger<VpnController> _logger = logger;
+    private readonly SiteCheckRunner _runner = runner;
 
+    private CancellationToken CancellationToken => HttpContext.RequestAborted;
+
+    /// <summary>
+    /// Changes the VPN Location, after any running check finishes.
+    /// </summary>
     [HttpPost("ChangeLocation")]
     public async Task<PiaLocation> ChangeLocation(
-        [FromQuery] bool excludeCurrent,
-        CancellationToken cancellationToken)
+        [FromQuery] bool excludeCurrent)
     {
-        return await _piaService.ChangeLocationAsync(excludeCurrent, cancellationToken);
+        return await _runner.ChangeVpnLocationAsync(excludeCurrent, CancellationToken);
     }
 
     [HttpGet("CurrentLocation")]
-    public async Task<PiaLocation> GetCurrentLocation(
-        CancellationToken cancellationToken)
+    public async Task<PiaLocation> GetCurrentLocation()
     {
-        return await _piaService.GetCurrentLocationAsync(cancellationToken);
+        return await _piaService.GetCurrentLocationAsync(CancellationToken);
     }
 
     [HttpGet("AllLocations")]
-    public async Task<List<PiaLocation>> GetAllLocations(
-        CancellationToken cancellationToken)
+    public async Task<List<PiaLocation>> GetAllLocations()
     {
-        return await _piaService.GetAllLocationsAsync(cancellationToken);
+        return await _piaService.GetAllLocationsAsync(CancellationToken);
     }
 }

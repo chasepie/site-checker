@@ -44,6 +44,12 @@ internal sealed class RunnerHarness : IAsyncDisposable
 
     public FakeTimeProvider Time { get; }
     public FakeScraperService Scraper { get; } = new();
+
+    /// <summary>
+    /// The VPN containers. Survives <see cref="RestartAsync"/>, like the real containers; the
+    /// <see cref="PiaService"/> (and its exclusions) doesn't.
+    /// </summary>
+    public FakePiaContainers Vpn { get; } = new();
     public RecordingEntityChangeService Broadcasts { get; } = new();
     public SaveFaultInterceptor SaveFaults { get; } = new();
 
@@ -94,6 +100,7 @@ internal sealed class RunnerHarness : IAsyncDisposable
             .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
             .AddSingleton<TimeProvider>(Time)
             .AddSingleton<IScraperService>(Scraper)
+            .AddSingleton<IPiaContainers>(Vpn)
             .AddSingleton<PiaService>()
             .AddSingleton<IEntityChangeService>(Broadcasts)
             .AddSingleton<INotificationChannel>(OtherChannel)
@@ -325,5 +332,54 @@ internal sealed class RecordingNotificationChannel : INotificationChannel
         }
         AfterSend?.Invoke();
         return Task.FromResult(true);
+    }
+}
+
+/// <summary>
+/// Stands in for the VPN and Browserless VPN containers, with six US locations in a fixed order.
+/// </summary>
+internal sealed class FakePiaContainers : IPiaContainers
+{
+    private readonly Lock _lock = new();
+    private readonly List<string> _restarts = [];
+
+    public static IReadOnlyList<string> LocationIds { get; } = ["us_a", "us_b", "us_c", "us_d", "us_e", "us_f"];
+
+    public bool Running { get; set; } = true;
+
+    /// <summary>
+    /// The location the VPN container is set to.
+    /// </summary>
+    public string CurrentLocationId { get; set; } = "us_a";
+
+    /// <summary>
+    /// Every location the containers were restarted on, in order.
+    /// </summary>
+    public IReadOnlyList<string> Restarts
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _restarts];
+            }
+        }
+    }
+
+    public Task<bool> IsVpnRunningAsync(CancellationToken cancellationToken) => Task.FromResult(Running);
+
+    public Task<List<PiaLocation>> ListLocationsAsync(CancellationToken cancellationToken)
+        => Task.FromResult(LocationIds.Select(id => new PiaLocation { Id = id, Name = id.ToUpperInvariant() }).ToList());
+
+    public Task<string> ReadCurrentLocationIdAsync(CancellationToken cancellationToken) => Task.FromResult(CurrentLocationId);
+
+    public Task SetLocationAndRestartAsync(string locationId, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            _restarts.Add(locationId);
+            CurrentLocationId = locationId;
+        }
+        return Task.CompletedTask;
     }
 }

@@ -27,7 +27,10 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
   - Deviation: `ScraperKind`, `RequestedAction`, `ScriptScraper` and `ScraperDefinition` were added to `ReinforcedTypingsConfiguration` here, because the frontend build needs them as soon as `Site` changes.
   - Deviation: CLAUDE.md's "Scrapers and Sites" section was rewritten here, since it described deleted code; commit 8 only touches it up.
   - Note: a local `site-checker/data/SiteChecker.db` from `main` must be deleted before running this branch (the fresh `Initial` migration can't apply to it).
-- [ ] 5. Requested Actions, the scrape lock and VPN fixes
+- [x] 5. Requested Actions, the scrape lock and VPN fixes
+  - Deviation: the shared history query is `SiteCheckHistory.FailingRunBeforeAsync` (in `src/Database/Extensions/SiteCheckHistory.cs`), returning the Baseline check and the Failing Run so far.
+  - Deviation: `DockerPiaContainers` keeps the US-only filter and the shuffle (it's what lists locations); `PiaService` keeps the order it's given, so tests can predict rotation. `VpnController` uses the `CancellationToken` property convention now.
+  - Deviation: CLAUDE.md's Site Check lifecycle section got the scrape lock and Requested Actions here.
 - [ ] 6. Site API and Test Runs (backend)
 - [ ] 7. Frontend
 - [ ] 8. Release workflow and docs

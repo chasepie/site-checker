@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SiteChecker.Backend.Notifiers;
 using SiteChecker.Database;
+using SiteChecker.Database.Extensions;
 using SiteChecker.Database.Model;
 
 namespace SiteChecker.Backend.Services;
@@ -135,29 +136,8 @@ public sealed class NotifierService(
         CancellationToken cancellationToken)
     {
         var site = siteCheck.Site;
-        var completedDate = siteCheck.CompletedDate!.Value;
-        var siteChecks = dbContext.SiteChecks.Where(sc => sc.SiteId == site.Id);
-
-        // History is ordered by when checks finished (CompletedDate, then Id), not by when they were
-        // created: a Baseline Reset recorded while a check is open finishes first.
-        var finishedBefore = siteChecks.Where(sc =>
-            sc.CompletedDate < completedDate || (sc.CompletedDate == completedDate && sc.Id < siteCheck.Id));
-
-        var previousSucceeded = await finishedBefore
-            .Where(sc => sc.Status == CheckStatus.Succeeded)
-            .OrderByDescending(sc => sc.CompletedDate)
-            .ThenByDescending(sc => sc.Id)
-            .Select(sc => new { sc.Id, sc.CompletedDate, sc.Value })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        // The Failing Run before this check: every Failed check that finished since the previous Succeeded.
-        var failedRunBefore = finishedBefore.Where(sc => sc.Status == CheckStatus.Failed);
-        if (previousSucceeded != null)
-        {
-            failedRunBefore = failedRunBefore.Where(sc =>
-                sc.CompletedDate > previousSucceeded.CompletedDate
-                || (sc.CompletedDate == previousSucceeded.CompletedDate && sc.Id > previousSucceeded.Id));
-        }
+        var (baseline, failedRunBefore) = await dbContext.SiteChecks.FailingRunBeforeAsync(
+            site.Id, siteCheck.CompletedDate!.Value, siteCheck.Id, cancellationToken);
 
         // Counted in the database: a long Failing Run can hold thousands of checks.
         var runBefore = new RunSummary(
@@ -180,8 +160,8 @@ public sealed class NotifierService(
         }
 
         // Succeeded. A Site's first Succeeded check only sets the Baseline, so it never counts as changed.
-        var contentChanged = previousSucceeded != null
-            && !string.Equals(previousSucceeded.Value, siteCheck.Value, StringComparison.Ordinal);
+        var contentChanged = baseline != null
+            && !string.Equals(baseline.Value, siteCheck.Value, StringComparison.Ordinal);
 
         if (runBefore.Reported)
         {
