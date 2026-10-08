@@ -11,7 +11,7 @@ namespace SiteChecker.Backend.Services.CheckQueue;
 
 /// <summary>
 /// Owns the Site Check lifecycle: decides which Sites are due, accepts requests for Site Checks,
-/// and moves each Site Check from Queued to Checking to Done or Failed.
+/// and moves each Site Check from Queued to Checking to Succeeded or Failed.
 /// </summary>
 /// <remarks>
 /// The database is the queue (see <c>docs/adr/0001-database-is-the-site-check-queue.md</c>):
@@ -20,7 +20,7 @@ namespace SiteChecker.Backend.Services.CheckQueue;
 /// </remarks>
 public sealed class SiteCheckRunner : IDisposable
 {
-    private const string EmptyCheckContent = "[Empty Check]";
+    private const string BaselineResetContent = "[Baseline Reset]";
     private const int DefaultVpnChangeIntervalMinutes = 15;
 
     /// <summary>
@@ -186,13 +186,13 @@ public sealed class SiteCheckRunner : IDisposable
     }
 
     /// <summary>
-    /// Records an Empty Check for a Site: a Done Site Check with placeholder content and no
-    /// scrape, which resets the baseline the next Site Check is compared against.
+    /// Records a Baseline Reset for a Site: a Succeeded Site Check with placeholder content and
+    /// no scrape, which resets the Baseline the next Site Check is compared against.
     /// </summary>
     /// <param name="siteId">The ID of the Site.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>The Empty Check, or <c>null</c> if the Site does not exist.</returns>
-    public async Task<SiteCheck?> RecordEmptyCheckAsync(int siteId, CancellationToken cancellationToken)
+    /// <returns>The Baseline Reset, or <c>null</c> if the Site does not exist.</returns>
+    public async Task<SiteCheck?> RecordBaselineResetAsync(int siteId, CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<SiteCheckerDbContext>();
@@ -205,7 +205,7 @@ public sealed class SiteCheckRunner : IDisposable
         }
 
         var siteCheck = new SiteCheck(site, _timeProvider.GetUtcNow().UtcDateTime);
-        siteCheck.Update(new SuccessScrapeResult { Content = EmptyCheckContent }, _timeProvider.GetUtcNow().UtcDateTime);
+        siteCheck.Update(new SuccessScrapeResult { Content = BaselineResetContent }, _timeProvider.GetUtcNow().UtcDateTime);
         dbContext.SiteChecks.Add(siteCheck);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -214,7 +214,7 @@ public sealed class SiteCheckRunner : IDisposable
 
     /// <summary>
     /// Re-queues orphaned Site Checks, then claims the oldest Queued Site Check and runs it to
-    /// Done or Failed. A failed Site Check is recorded on the Site Check, not thrown; this only
+    /// Succeeded or Failed. A failed Site Check is recorded on the Site Check, not thrown; this only
     /// throws when the database itself fails, in which case the caller should wait before
     /// calling again.
     /// </summary>
@@ -243,7 +243,7 @@ public sealed class SiteCheckRunner : IDisposable
         }
 
         // Outside the try: the outcome is already saved, and a notification problem must never
-        // turn a Done check into a Failed one.
+        // turn a Succeeded check into a Failed one.
         await _notifier.NotifyAsync(siteCheckId.Value, cancellationToken);
 
         return true;

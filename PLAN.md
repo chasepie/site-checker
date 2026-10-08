@@ -14,7 +14,8 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
 ### Progress
 - [x] 1. Reorganize the test projects
   - Deviation: `Scraper.IntegrationTests` is created in commit 3, with its first tests, because a test project with no tests fails `dotnet test`.
-- [ ] 2. Domain renames and a fresh migration
+- [x] 2. Domain renames and a fresh migration
+  - Deviation: CLAUDE.md's Notifications bullet and ADR 0002 were updated to the new terms here, not in commit 8, because they named the renamed `DoneDate` column.
 - [ ] 3. Scripting contract, runtime compiler and demo scripts
 - [ ] 4. Shared pipeline, new model and switchover
 - [ ] 5. Requested Actions, the scrape lock and VPN fixes

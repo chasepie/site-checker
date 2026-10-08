@@ -80,11 +80,14 @@ public class SiteCheckController(
             siteCheck);
     }
 
-    [HttpPost(nameof(CreateEmptyCheck))]
-    public async Task<ActionResult<SiteCheck>> CreateEmptyCheck(
+    /// <summary>
+    /// Records a Baseline Reset: a Succeeded check without a scrape, so the next check notifies Updated.
+    /// </summary>
+    [HttpPost(nameof(ResetBaseline))]
+    public async Task<ActionResult<SiteCheck>> ResetBaseline(
         [FromRoute] int siteId)
     {
-        var siteCheck = await _runner.RecordEmptyCheckAsync(siteId, CancellationToken);
+        var siteCheck = await _runner.RecordBaselineResetAsync(siteId, CancellationToken);
         if (siteCheck == null)
         {
             return NotFound();

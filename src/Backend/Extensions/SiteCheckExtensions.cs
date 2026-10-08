@@ -14,7 +14,7 @@ public static class SiteCheckExtensions
 
     extension(SiteCheck siteCheck)
     {
-        public void Update(IScrapeResult result, DateTime doneDate)
+        public void Update(IScrapeResult result, DateTime completedDate)
         {
             if (result.IsFailure(out var failure))
             {
@@ -36,7 +36,7 @@ public static class SiteCheckExtensions
             }
             else if (result.IsSuccess(out var success))
             {
-                siteCheck.Status = CheckStatus.Done;
+                siteCheck.Status = CheckStatus.Succeeded;
                 siteCheck.Value = success.Content;
                 siteCheck.FailureKind = null;
             }
@@ -45,7 +45,7 @@ public static class SiteCheckExtensions
                 throw new InvalidOperationException("Unknown scrape result type");
             }
 
-            siteCheck.DoneDate = doneDate;
+            siteCheck.CompletedDate = completedDate;
         }
     }
 }

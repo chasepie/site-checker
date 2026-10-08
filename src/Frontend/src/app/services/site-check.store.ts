@@ -166,8 +166,8 @@ export const SiteCheckStore = signalStore(
       store._removeFromCache(toRemove);
     },
 
-    createEmptyCheck: async (siteId: number) => {
-      const newSiteCheck = await store._controller.createEmptyCheck(siteId);
+    resetBaseline: async (siteId: number) => {
+      const newSiteCheck = await store._controller.resetBaseline(siteId);
       store._upsertInCache([newSiteCheck]);
     },
 

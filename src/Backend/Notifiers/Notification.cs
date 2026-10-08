@@ -6,7 +6,7 @@ namespace SiteChecker.Backend.Notifiers;
 /// </summary>
 public enum NotificationKind
 {
-    /// <summary>A Done Site Check whose content differs from the previous Done Site Check.</summary>
+    /// <summary>A Succeeded Site Check whose content differs from its Baseline.</summary>
     Updated,
 
     /// <summary>A Failing Run being reported: its first unexpected failure, or its Known Failures reaching the threshold.</summary>

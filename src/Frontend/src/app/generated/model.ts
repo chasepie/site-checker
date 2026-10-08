@@ -10,7 +10,7 @@ import { lastValueFrom } from 'rxjs';
 export const CheckStatus = z.enum([
 	"Queued",
 	"Checking",
-	"Done",
+	"Succeeded",
 	"Failed",
 ]);
 
@@ -82,7 +82,7 @@ export const SiteCheck = IEntityWithId.extend({
 	failureKind: FailureKind.nullable(),
 	reportedAt: z.string().nullable(),
 	startDate: z.string(),
-	doneDate: z.string().nullable(),
+	completedDate: z.string().nullable(),
 	siteId: z.number(),
 });
 export type SiteCheck = z.infer<typeof SiteCheck>;
@@ -188,11 +188,12 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 		const result = await lastValueFrom(obs$);
 		return SiteCheck.parse(result);
 	}
-	public async createEmptyCheck(siteId: number) 
+	/** Records a Baseline Reset: a Succeeded check without a scrape, so the next check notifies Updated. */
+	public async resetBaseline(siteId: number) 
 	{
 		const obs$ = this._httpClient.request(
 			'POST',
-			`api/Site/${siteId}/check/CreateEmptyCheck`,
+			`api/Site/${siteId}/check/ResetBaseline`,
 			{
 				params: {},
 				body: null

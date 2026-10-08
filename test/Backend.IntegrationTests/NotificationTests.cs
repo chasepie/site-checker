@@ -44,7 +44,7 @@ public sealed class NotificationTests
     // ---- Content changes ----
 
     [TestMethod]
-    public async Task Updated_WhenContentDiffersFromPreviousDone()
+    public async Task Updated_WhenContentDiffersFromBaseline()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
@@ -71,7 +71,7 @@ public sealed class NotificationTests
     }
 
     [TestMethod]
-    public async Task Nothing_ForSitesFirstDoneCheck()
+    public async Task Nothing_ForSitesFirstSucceededCheck()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
@@ -207,13 +207,13 @@ public sealed class NotificationTests
     }
 
     [TestMethod]
-    public async Task EmptyCheck_EndsReportedRunSilently_SoTheNextFailureIsReportedAgain()
+    public async Task BaselineReset_EndsReportedRunSilently_SoTheNextFailureIsReportedAgain()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
         await RunChecksAsync(harness, site, Content("a"), Unexpected("boom"));
 
-        await harness.Runner.RecordEmptyCheckAsync(site.Id, Ct);
+        await harness.Runner.RecordBaselineResetAsync(site.Id, Ct);
         Assert.HasCount(1, harness.Notifications.Sent);
 
         await RunChecksAsync(harness, site, Unexpected("boom again"));
@@ -251,21 +251,21 @@ public sealed class NotificationTests
     }
 
     [TestMethod]
-    public async Task EmptyCheckRecordedWhileACheckIsOpen_EndsTheRunBeforeThatCheckFinishes()
+    public async Task BaselineResetRecordedWhileACheckIsOpen_EndsTheRunBeforeThatCheckFinishes()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
         await RunChecksAsync(harness, site, Content("a"), Unexpected("boom"));
 
-        // The open check is created first but finishes after the Empty Check.
+        // The open check is created first but finishes after the Baseline Reset.
         await harness.Runner.RequestCheckAsync(site.Id, Ct);
         harness.Time.Advance(TimeSpan.FromMinutes(1));
-        await harness.Runner.RecordEmptyCheckAsync(site.Id, Ct);
+        await harness.Runner.RecordBaselineResetAsync(site.Id, Ct);
         harness.Time.Advance(TimeSpan.FromMinutes(1));
         harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(Content("a"));
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
 
-        // No Recovery: the Empty Check ended the run and reset the baseline, so "a" is an update.
+        // No Recovery: the Baseline Reset ended the run and reset the Baseline, so "a" is an update.
         CollectionAssert.AreEqual(
             new[] { NotificationKind.Failing, NotificationKind.Updated },
             Kinds(harness));
@@ -408,7 +408,7 @@ public sealed class NotificationTests
 
         Assert.AreEqual(NotificationKind.Updated, Assert.ContainsSingle(harness.Notifications.Sent).Kind);
         var checks = await harness.GetChecksAsync(site.Id, Ct);
-        Assert.AreEqual(CheckStatus.Done, checks[^1].Status);
+        Assert.AreEqual(CheckStatus.Succeeded, checks[^1].Status);
     }
 
     // ---- Recorded outcome ----
