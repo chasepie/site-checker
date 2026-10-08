@@ -1,4 +1,4 @@
-namespace SiteChecker.Backend.Test;
+namespace SiteChecker.Backend.IntegrationTests;
 
 using SiteChecker.Backend.Notifiers;
 using SiteChecker.Database.Model;

@@ -1,4 +1,4 @@
-namespace SiteChecker.Backend.Test;
+namespace SiteChecker.Backend.UnitTests;
 
 using System.Net;
 using Microsoft.Extensions.Configuration;

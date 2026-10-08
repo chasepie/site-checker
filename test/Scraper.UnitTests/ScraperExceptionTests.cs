@@ -1,4 +1,4 @@
-namespace SiteChecker.Scraper.Test;
+namespace SiteChecker.Scraper.UnitTests;
 
 using SiteChecker.Scraper.Exceptions;
 

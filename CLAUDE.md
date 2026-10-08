@@ -15,8 +15,8 @@ dotnet build --configuration Release --no-restore
 
 # Backend tests (MSTest v4 on Microsoft.Testing.Platform)
 dotnet test
-dotnet test --project test/Backend.Test/Backend.Test.csproj
-dotnet test --project test/Backend.Test/Backend.Test.csproj --filter "FullyQualifiedName~RunNext"
+dotnet test --project test/Backend.IntegrationTests/Backend.IntegrationTests.csproj
+dotnet test --project test/Backend.IntegrationTests/Backend.IntegrationTests.csproj --filter "FullyQualifiedName~RunNext"
 
 # Run the backend (needs Browserless containers or local Playwright; see docs/local-development.md)
 cd src/Backend && dotnet run
@@ -87,7 +87,8 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 
 ### Testing
 - Use MSTest v4 only (no xUnit, NUnit, or Jest). The MSTest analyzers run in `Recommended` mode with warnings as errors, so use the specific asserts (`Assert.HasCount`, `Assert.ContainsSingle`, `Assert.IsEmpty`) and pass `TestContext.CancellationToken`.
-- `test/Backend.Test` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF.
+- Test projects are split by category, and the name says which: `*.UnitTests` (fast, no database or Roslyn) and `*.IntegrationTests` (real SQLite, real compilation). Both run in CI.
+- `test/Backend.IntegrationTests` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` (in `test/Backend.UnitTests`) cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF.
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.

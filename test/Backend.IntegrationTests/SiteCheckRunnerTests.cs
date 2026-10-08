@@ -1,4 +1,4 @@
-namespace SiteChecker.Backend.Test;
+namespace SiteChecker.Backend.IntegrationTests;
 
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Database.Model;

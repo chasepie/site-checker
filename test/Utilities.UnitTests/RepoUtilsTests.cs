@@ -1,4 +1,4 @@
-namespace SiteChecker.Utilities.Test;
+namespace SiteChecker.Utilities.UnitTests;
 
 using SiteChecker.Utilities;
 
