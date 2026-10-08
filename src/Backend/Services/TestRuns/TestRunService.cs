@@ -58,6 +58,7 @@ public sealed class TestRunService(
             };
         }
 
+        _logger.LogInformation("Test Run {TestRunId} ended: {Outcome}.", request.TestRunId, result.Outcome);
         try
         {
             await _hubContext.Clients.Client(request.ConnectionId)

@@ -68,6 +68,7 @@ export const VpnStore = signalStore(
         )
         .subscribe();
 
+      // The VPN may not be reachable (for example in local development); pages fall back to IDs.
       store._signalrService.loadOnConnect(() => store._controller.getCurrentLocation())
         .pipe(takeUntilDestroyed())
         .subscribe(currLoc => { store._updateCurrentLocation(currLoc); });

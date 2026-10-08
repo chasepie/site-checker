@@ -1,12 +1,14 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, TemplateRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
 import { NgbDropdownModule, NgbModal, NgbPaginationModule } from '@ng-bootstrap/ng-bootstrap';
 import { SiteCheck, SiteCheckController } from '../../generated/model';
 import { SiteCheckStore } from '../../services/site-check.store';
 import { SiteStore } from '../../services/site.store';
+import { VpnStore } from '../../services/vpn.store';
+import { requestedActionLabel, vpnLocationLabel } from '../../utilities/labels';
 import { convertTimeOnlyStringToDate } from '../../utilities/type-utils';
-import { EditSite } from '../edit-site/edit-site';
 import { SiteCheckDetails } from '../site-check-details/site-check-details';
 
 const MAX_URL_LENGTH = 200;
@@ -15,7 +17,7 @@ const MAX_URL_LENGTH = 200;
   selector: 'app-site-details',
   templateUrl: './site-details.html',
   styleUrl: './site-details.scss',
-  imports: [FormsModule, NgbPaginationModule, DatePipe, NgbDropdownModule],
+  imports: [FormsModule, NgbPaginationModule, DatePipe, NgbDropdownModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SiteDetails {
@@ -23,8 +25,12 @@ export class SiteDetails {
   private readonly _siteCheckStore = inject(SiteCheckStore);
   private readonly _controller = inject(SiteCheckController);
   private readonly _modalService = inject(NgbModal);
+  private readonly _vpnStore = inject(VpnStore);
+  private readonly _router = inject(Router);
 
   protected readonly site = this._siteStore.selectedSite;
+  protected readonly hasSites = computed(() => this._siteStore.entities().length > 0);
+  protected readonly requestedActionLabel = requestedActionLabel;
   protected readonly siteChecks = this._siteCheckStore.filteredEntities;
   protected readonly pageNumber = signal(1);
   protected readonly pageSize = signal(10);
@@ -72,6 +78,15 @@ export class SiteDetails {
       : `${schedule.interval} minutes`;
     return `Every ${interval}, ${startTime} to ${endTime}`;
   });
+
+  protected readonly timeoutText = computed(() => {
+    const seconds = this.site()?.timeoutSeconds;
+    return seconds == null ? 'Default' : `${seconds} seconds`;
+  });
+
+  protected vpnLocationName(locationId: string | null): string {
+    return vpnLocationLabel(locationId, this._vpnStore.entityMap());
+  }
 
   protected readonly optionsText = computed(() => {
     const site = this.site();
@@ -127,16 +142,27 @@ export class SiteDetails {
     await this._siteCheckStore.resetBaseline(site.id);
   }
 
-  protected editSite() {
-    const s = this.site();
-    if (!s) {
+  protected async editSite() {
+    const site = this.site();
+    if (site) {
+      await this._router.navigate(['/sites', site.id, 'edit']);
+    }
+  }
+
+  /**
+   * Deletes the Site, with its checks, screenshots and script, once confirmed.
+   */
+  protected async deleteSite(confirmation: TemplateRef<unknown>) {
+    const site = this.site();
+    if (!site) {
       return;
     }
 
-    this._modalService.open(EditSite, {
-      size: 'lg',
-      fullscreen: 'sm',
-      scrollable: true,
-    });
+    try {
+      await this._modalService.open(confirmation).result;
+    } catch {
+      return; // Dismissed
+    }
+    await this._siteStore.deleteSite(site);
   }
 }

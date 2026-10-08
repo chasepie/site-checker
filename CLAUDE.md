@@ -39,7 +39,7 @@ cp example.env .env && docker compose up
 Build notes:
 - Building `src/Backend` also builds the Angular app (an `AfterTargets="Build"` step in `Backend.csproj`) and regenerates `src/Frontend/src/app/generated/model.ts`. Node/npm must be available.
 - Package versions are central in `Directory.Packages.props`, and every project has a `packages.lock.json`. CI restores with `--locked-mode`, so commit lock file changes along with version bumps.
-- Most frontend specs are untouched Angular scaffolding and currently fail (missing providers). The `auth.service`, `signalr.service` and `edit-site` specs are real and pass, so run those with `--include`. CI only runs the backend tests.
+- Most frontend specs are untouched Angular scaffolding and currently fail (missing providers). The `auth.service`, `signalr.service` and `site-editor` specs are real and pass, so run those with `--include`. CI only runs the backend tests.
 
 ## Architecture
 

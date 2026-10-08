@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { CheckStatus, Site } from '../../generated/model';
 import { SiteStore } from '../../services/site.store';
 import { SiteDashboardService } from '../site-dashboard/site-dashboard.service';
@@ -8,7 +9,7 @@ import { SiteDashboardService } from '../site-dashboard/site-dashboard.service';
   selector: 'app-site-list',
   templateUrl: './site-list.html',
   styleUrl: './site-list.scss',
-  imports: [DatePipe],
+  imports: [DatePipe, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SiteList {
@@ -17,6 +18,10 @@ export class SiteList {
   protected sites = this._siteStore.sitesWithLatestCheck;
   protected selectedSite = this._siteStore.selectedSite;
   protected readonly CheckStatus = CheckStatus;
+
+  protected closeSidebar(): void {
+    this._siteDashboardService.toggleSidebar.set(false);
+  }
 
   protected selectSite(site: Site): void {
     this._siteStore.selectSite(site);
