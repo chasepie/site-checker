@@ -17,15 +17,16 @@ namespace SiteChecker.Database.Migrations
                 {
                     Id = table.Column<int>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
-                    ScraperId = table.Column<string>(type: "TEXT", nullable: false),
                     Name = table.Column<string>(type: "TEXT", nullable: false),
                     Url = table.Column<string>(type: "TEXT", nullable: false),
                     UseVpn = table.Column<bool>(type: "INTEGER", nullable: false),
                     AlwaysTakeScreenshot = table.Column<bool>(type: "INTEGER", nullable: false),
                     KnownFailuresThreshold = table.Column<int>(type: "INTEGER", nullable: false, defaultValue: 5),
+                    TimeoutSeconds = table.Column<int>(type: "INTEGER", nullable: true),
                     DiscordConfig = table.Column<string>(type: "TEXT", nullable: false),
                     PushoverConfig = table.Column<string>(type: "TEXT", nullable: false),
-                    Schedule = table.Column<string>(type: "TEXT", nullable: false)
+                    Schedule = table.Column<string>(type: "TEXT", nullable: false),
+                    Scraper = table.Column<string>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -43,6 +44,7 @@ namespace SiteChecker.Database.Migrations
                     Status = table.Column<int>(type: "INTEGER", nullable: false),
                     FailureKind = table.Column<int>(type: "INTEGER", nullable: true),
                     ReportedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    RequestedActions = table.Column<string>(type: "TEXT", nullable: false),
                     StartDate = table.Column<DateTime>(type: "TEXT", nullable: false),
                     CompletedDate = table.Column<DateTime>(type: "TEXT", nullable: true),
                     SiteId = table.Column<int>(type: "INTEGER", nullable: false),
@@ -53,6 +55,24 @@ namespace SiteChecker.Database.Migrations
                     table.PrimaryKey("PK_SiteChecks", x => x.Id);
                     table.ForeignKey(
                         name: "FK_SiteChecks_Sites_SiteId",
+                        column: x => x.SiteId,
+                        principalTable: "Sites",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "SiteScripts",
+                columns: table => new
+                {
+                    SiteId = table.Column<int>(type: "INTEGER", nullable: false),
+                    Source = table.Column<string>(type: "TEXT", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SiteScripts", x => x.SiteId);
+                    table.ForeignKey(
+                        name: "FK_SiteScripts_Sites_SiteId",
                         column: x => x.SiteId,
                         principalTable: "Sites",
                         principalColumn: "Id",
@@ -94,12 +114,6 @@ namespace SiteChecker.Database.Migrations
                 table: "SiteCheckScreenshots",
                 column: "SiteCheckId",
                 unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Sites_ScraperId",
-                table: "Sites",
-                column: "ScraperId",
-                unique: true);
         }
 
         /// <inheritdoc />
@@ -107,6 +121,9 @@ namespace SiteChecker.Database.Migrations
         {
             migrationBuilder.DropTable(
                 name: "SiteCheckScreenshots");
+
+            migrationBuilder.DropTable(
+                name: "SiteScripts");
 
             migrationBuilder.DropTable(
                 name: "SiteChecks");

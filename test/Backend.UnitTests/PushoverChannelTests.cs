@@ -51,7 +51,6 @@ public sealed class PushoverChannelTests
     {
         Name = "Site",
         Url = new Uri("https://example.com"),
-        ScraperId = "SCRAPER",
         PushoverConfig = new PushoverConfig { SuccessPriority = success, FailurePriority = failure },
     };
 

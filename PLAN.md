@@ -21,7 +21,12 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
   - Deviation: the reference set lives in `ScriptCompiler` (built in its constructor) rather than a separate `ScriptReferences`. Besides the framework, it includes the dependency closure of Logging.Abstractions, Playwright and the contract, because Playwright targets netstandard2.0 and its public types need `Microsoft.Bcl.AsyncInterfaces`.
   - Deviation: `IScriptCompiler` has `Validate(source, fileName)` (compile only, nothing loaded) for the Site validator in commit 6. `ScriptOutcome` exposes `IsKnownFailure`, `Content`, `KnownFailureMessage` and `RequestedActions`, plus `Success(string)` alongside the implicit conversion.
   - Deviation: `IScriptCompiler` and `ScriptCache` are already registered in `AddScraperServices()`.
-- [ ] 4. Shared pipeline, new model and switchover
+- [x] 4. Shared pipeline, new model and switchover
+  - Deviation: `TryResult` and its tests were deleted; the pipeline uses plain try/catch for the screenshot and dumps.
+  - Deviation: `ScrapeRequest.IsTestRun` is derived (`SiteCheckId is null`) rather than a separate flag. `ScriptSite.UsesVpn` reports whether the page actually goes through the VPN (`BrowserType.BrowserlessVpn`).
+  - Deviation: `ScraperKind`, `RequestedAction`, `ScriptScraper` and `ScraperDefinition` were added to `ReinforcedTypingsConfiguration` here, because the frontend build needs them as soon as `Site` changes.
+  - Deviation: CLAUDE.md's "Scrapers and Sites" section was rewritten here, since it described deleted code; commit 8 only touches it up.
+  - Note: a local `site-checker/data/SiteChecker.db` from `main` must be deleted before running this branch (the fresh `Initial` migration can't apply to it).
 - [ ] 5. Requested Actions, the scrape lock and VPN fixes
 - [ ] 6. Site API and Test Runs (backend)
 - [ ] 7. Frontend

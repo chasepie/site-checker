@@ -3,7 +3,6 @@ namespace SiteChecker.Backend.IntegrationTests;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Database.Model;
 using SiteChecker.Scraper;
-using SiteChecker.Scraper.Exceptions;
 
 [TestClass]
 public sealed class SiteCheckRunnerTests
@@ -192,18 +191,22 @@ public sealed class SiteCheckRunnerTests
         harness.Scraper.OnScrape = async request =>
         {
             await using var dbContext = harness.CreateDbContext();
-            var current = await dbContext.SiteChecks.SingleAsync(sc => sc.Id == request.Id, Ct);
+            var current = await dbContext.SiteChecks.SingleAsync(sc => sc.Id == request.SiteCheckId, Ct);
             statusDuringScrape = current.Status;
             locationDuringScrape = current.VpnLocationId;
-            return new SuccessScrapeResult { Content = "new content", Screenshot = [1, 2, 3] };
+            return ScrapeResult.Succeeded("new content") with { Screenshot = [1, 2, 3] };
         };
 
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
 
         Assert.AreEqual(CheckStatus.Checking, statusDuringScrape);
-        Assert.AreEqual("No VPN", locationDuringScrape);
+        Assert.IsNull(locationDuringScrape);
         var request = Assert.ContainsSingle(harness.Scraper.Requests);
-        Assert.AreEqual(older.ScraperId, request.ScraperId);
+        Assert.AreEqual(older.Id, request.Site.Id);
+        Assert.AreEqual(older.Url, request.Site.Url);
+        var script = Assert.IsInstanceOfType<ScriptSpec>(request.Scraper);
+        Assert.AreEqual(older.Scraper.Script!.SourceHash, script.SourceHash);
+        Assert.AreEqual(RunnerHarness.ScriptSourceFor(older), script.Source);
 
         var succeeded = Assert.ContainsSingle(await harness.GetChecksAsync(older.Id, Ct));
         Assert.AreEqual(CheckStatus.Succeeded, succeeded.Status);
@@ -225,8 +228,7 @@ public sealed class SiteCheckRunnerTests
         await using var harness = await RunnerHarness.CreateAsync(Ct);
         var site = await harness.AddSiteAsync(null, Ct);
         await harness.Runner.RequestCheckAsync(site.Id, Ct);
-        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(
-            FailureScrapeResult.FromException(new AccessDeniedScraperException()));
+        harness.Scraper.OnScrape = _ => Task.FromResult(ScrapeResult.KnownFailure("Access Denied"));
 
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
 
@@ -261,9 +263,9 @@ public sealed class SiteCheckRunnerTests
         {
             // Screenshots are unique per Site Check, so the runner's own screenshot insert will fail.
             await using var dbContext = harness.CreateDbContext();
-            dbContext.SiteCheckScreenshots.Add(new SiteCheckScreenshot { SiteCheckId = request.Id, Data = [9] });
+            dbContext.SiteCheckScreenshots.Add(new SiteCheckScreenshot { SiteCheckId = request.SiteCheckId!.Value, Data = [9] });
             await dbContext.SaveChangesAsync(Ct);
-            return new SuccessScrapeResult { Content = "never saved", Screenshot = [1] };
+            return ScrapeResult.Succeeded("never saved") with { Screenshot = [1] };
         };
 
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
@@ -301,8 +303,8 @@ public sealed class SiteCheckRunnerTests
         await Assert.ThrowsAsync<DbUpdateException>(() => harness.Runner.RunNextAsync(Ct));
 
         // Without a restart, the Site recovers: the stuck check is re-run.
-        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(
-            new SuccessScrapeResult { Content = "recovered" });
+        harness.Scraper.OnScrape = _ => Task.FromResult(
+            ScrapeResult.Succeeded("recovered"));
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
 
         var check = Assert.ContainsSingle(await harness.GetChecksAsync(site.Id, Ct));
@@ -322,7 +324,7 @@ public sealed class SiteCheckRunnerTests
             var interrupted = new SiteCheck(site, harness.Time.GetUtcNow().UtcDateTime)
             {
                 Status = CheckStatus.Checking,
-                VpnLocationId = "No VPN",
+                VpnLocationId = null,
             };
             dbContext.SiteChecks.Add(interrupted);
             await dbContext.SaveChangesAsync(Ct);
@@ -333,7 +335,7 @@ public sealed class SiteCheckRunnerTests
         harness.Scraper.OnScrape = _ =>
         {
             broadcastBeforeScrape = harness.Broadcasts.SiteCheckUpdates;
-            return Task.FromResult<IScrapeResult>(new SuccessScrapeResult { Content = "content" });
+            return Task.FromResult(ScrapeResult.Succeeded("content"));
         };
 
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
@@ -380,7 +382,7 @@ public sealed class SiteCheckRunnerTests
         await harness.Runner.QueueDueChecksAsync(Ct);
 
         var scrapeStarted = new TaskCompletionSource();
-        var scrapeResult = new TaskCompletionSource<IScrapeResult>();
+        var scrapeResult = new TaskCompletionSource<ScrapeResult>();
         harness.Scraper.OnScrape = _ =>
         {
             scrapeStarted.SetResult();
@@ -395,8 +397,8 @@ public sealed class SiteCheckRunnerTests
 
         await harness.RestartAsync();
         harness.Time.Advance(TimeSpan.FromMinutes(1));
-        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(
-            new SuccessScrapeResult { Content = "after restart" });
+        harness.Scraper.OnScrape = _ => Task.FromResult(
+            ScrapeResult.Succeeded("after restart"));
         await harness.Runner.QueueDueChecksAsync(Ct);
 
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));

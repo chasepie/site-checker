@@ -14,6 +14,7 @@ using SiteChecker.Database;
 using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
 using SiteChecker.Scraper;
+using SiteChecker.Scraper.Scripts;
 
 /// <summary>
 /// Hosts a <see cref="SiteCheckRunner"/> over a migrated in-memory SQLite database, with a fake
@@ -129,13 +130,25 @@ internal sealed class RunnerHarness : IAsyncDisposable
         int knownFailuresThreshold = 5)
     {
         _siteCount++;
+        var name = $"Site {_siteCount}";
+        var source = ScriptSourceFor(name);
         var site = new Site
         {
-            Name = $"Site {_siteCount}",
+            Name = name,
             Url = new Uri($"https://example.com/{_siteCount}"),
-            ScraperId = $"SCRAPER_{_siteCount}",
             Schedule = schedule ?? new SiteSchedule(),
             KnownFailuresThreshold = knownFailuresThreshold,
+            Scraper = new ScraperDefinition
+            {
+                Kind = ScraperKind.Script,
+                Script = new ScriptScraper
+                {
+                    FileName = $"Site{_siteCount}.cs",
+                    SourceHash = ScriptSource.Hash(source),
+                    UploadedAt = Time.GetUtcNow().UtcDateTime,
+                },
+            },
+            SiteScript = new SiteScript { Source = source },
         };
 
         await using var dbContext = CreateDbContext();
@@ -143,6 +156,13 @@ internal sealed class RunnerHarness : IAsyncDisposable
         await dbContext.SaveChangesAsync(cancellationToken);
         return site;
     }
+
+    /// <summary>
+    /// The script source <see cref="AddSiteAsync"/> gives a Site. The fake scraper never runs it.
+    /// </summary>
+    public static string ScriptSourceFor(Site site) => ScriptSourceFor(site.Name);
+
+    private static string ScriptSourceFor(string siteName) => $"// The script for {siteName}";
 
     public async Task SetKnownFailuresThresholdAsync(int siteId, int threshold, CancellationToken cancellationToken)
     {
@@ -170,22 +190,28 @@ internal sealed class RunnerHarness : IAsyncDisposable
 }
 
 /// <summary>
-/// Stands in for Playwright. Never routes through the VPN, so the VPN code is never reached.
+/// Stands in for the scrape pipeline and Playwright.
 /// </summary>
 internal sealed class FakeScraperService : IScraperService
 {
-    public Func<ScrapeRequest, Task<IScrapeResult>> OnScrape { get; set; } =
-        _ => Task.FromResult<IScrapeResult>(new SuccessScrapeResult { Content = "content" });
+    public Func<ScrapeRequest, Task<ScrapeResult>> OnScrape { get; set; } =
+        _ => Task.FromResult(ScrapeResult.Succeeded("content"));
 
     public List<ScrapeRequest> Requests { get; } = [];
 
-    public Task<IScrapeResult> ScrapeContentAsync(ScrapeRequest request)
+    /// <summary>
+    /// The browser every Site is scraped in. Browserless doesn't route through the VPN, so by
+    /// default the VPN code is never reached.
+    /// </summary>
+    public BrowserType BrowserType { get; set; } = BrowserType.Browserless;
+
+    public Task<ScrapeResult> ScrapeAsync(ScrapeRequest request, CancellationToken cancellationToken)
     {
         Requests.Add(request);
         return OnScrape(request);
     }
 
-    public BrowserType GetBrowserType(bool useVpn) => BrowserType.Browserless;
+    public BrowserType GetBrowserType(bool useVpn) => BrowserType;
 }
 
 /// <summary>

@@ -44,6 +44,8 @@ public static partial class ReinforcedTypingsConfiguration
             typeof(CheckStatus),
             typeof(FailureKind),
             typeof(PushoverPriority),
+            typeof(RequestedAction),
+            typeof(ScraperKind),
         };
         builder.ExportAsEnums(enums, builder =>
         {
@@ -68,6 +70,8 @@ public static partial class ReinforcedTypingsConfiguration
             typeof(SiteSchedule),
             typeof(SiteUpdate),
             typeof(SiteCheck),
+            typeof(ScriptScraper),
+            typeof(ScraperDefinition),
             typeof(Site),
             typeof(SiteCheckScreenshot)
         };
