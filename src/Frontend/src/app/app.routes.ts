@@ -12,6 +12,14 @@ export const routes: Routes = [
     loadComponent: () => import('./components/vpn/vpn').then(m => m.Vpn)
   },
   {
+    path: 'sites/new',
+    loadComponent: () => import('./components/site-editor/site-editor').then(m => m.SiteEditor)
+  },
+  {
+    path: 'sites/:id/edit',
+    loadComponent: () => import('./components/site-editor/site-editor').then(m => m.SiteEditor)
+  },
+  {
     path: 'history',
     loadComponent: () => import('./components/history/history').then(m => m.History)
   },

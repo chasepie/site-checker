@@ -1,6 +1,6 @@
 import { effect, inject, resource } from '@angular/core';
 import { patchState, signalStore, withHooks, withMethods, withProps, withState } from '@ngrx/signals';
-import { addEntity, withEntities } from '@ngrx/signals/entities';
+import { addEntity, removeEntities, withEntities } from '@ngrx/signals/entities';
 import { SiteCheck, SiteCheckController, SiteCheckScreenshot } from '../generated/model';
 
 export const ScreenshotStore = signalStore(
@@ -40,7 +40,11 @@ export const ScreenshotStore = signalStore(
     },
     _addToCache(screenshot: SiteCheckScreenshot) {
       patchState(store, addEntity(screenshot));
-    }
+    },
+    removeForSiteChecks(siteCheckIds: number[]) {
+      const ids = new Set(siteCheckIds);
+      patchState(store, removeEntities(s => ids.has(s.siteCheckId)));
+    },
   })),
 
   withHooks({

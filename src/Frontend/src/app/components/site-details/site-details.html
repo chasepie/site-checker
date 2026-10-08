@@ -8,6 +8,19 @@
       <a id="site-url" href="{{ site.url }}" target="_blank">{{ site.url }}</a>
     </div>
     <div class="col-12 col-sm-6">
+      <h5>Script</h5>
+      @if (site.scraper.script; as script) {
+      <div><i class="bi bi-file-earmark-code"></i> {{ script.fileName }}</div>
+      <div class="form-text m-0">Uploaded {{ script.uploadedAt | date: 'medium' }}</div>
+      } @else {
+      <div>None</div>
+      }
+    </div>
+    <div class="col-12 col-sm-6">
+      <h5>Timeout</h5>
+      <div>{{ timeoutText() }}</div>
+    </div>
+    <div class="col-12 col-sm-6">
       <h5>Discord Channel ID</h5>
       <div>{{ site.discordConfig.channelId || 'N/A' }}</div>
     </div>
@@ -32,6 +45,8 @@
       <div class="dropdown-divider"></div>
       <button ngbDropdownItem (click)="this.queueCheck()">Queue Check</button>
       <button ngbDropdownItem (click)="this.resetBaseline()">Reset Baseline</button>
+      <div class="dropdown-divider"></div>
+      <button ngbDropdownItem class="text-danger" (click)="this.deleteSite(confirmDelete)">Delete Site</button>
     </div>
   </div>
   <div>
@@ -64,8 +79,13 @@
           @for (sc of siteChecks(); track sc.id) {
           <tr (click)="openCheckDetails(sc)" style="cursor: pointer;">
             <td class="date-col">{{ sc.startDate | date: 'medium' }}</td>
-            <td class="status-col">{{ sc.status }}</td>
-            <td class="vpn-col">{{ sc.vpnLocationId ?? '' }}</td>
+            <td class="status-col">
+              {{ sc.status }}
+              @for (action of sc.requestedActions; track action) {
+              <span class="badge text-bg-secondary" title="Requested Action">{{ requestedActionLabel(action) }}</span>
+              }
+            </td>
+            <td class="vpn-col">{{ vpnLocationName(sc.vpnLocationId) }}</td>
             <td class="value-col"><code>{{sc.value}}</code></td>
             <td class="actions-col" (click)="$event.stopPropagation()">
               <div ngbDropdown container="body">
@@ -102,8 +122,27 @@
   </div>
 </div>
 
-} @else {
+<ng-template #confirmDelete let-modal>
+  <div class="modal-header">
+    <h4 class="modal-title">Delete {{ site.name }}?</h4>
+    <button type="button" class="btn-close" aria-label="Close" (click)="modal.dismiss()"></button>
+  </div>
+  <div class="modal-body">
+    This deletes the Site with all of its Site Checks, screenshots and its script. It can't be undone.
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline-secondary" (click)="modal.dismiss()">Cancel</button>
+    <button type="button" class="btn btn-danger" (click)="modal.close()">Delete Site</button>
+  </div>
+</ng-template>
+
+} @else if (hasSites()) {
 <div class="site-details">
   <p>Please select a site from the list to view its details.</p>
+</div>
+} @else {
+<div class="site-details">
+  <p>There are no Sites yet.</p>
+  <a class="btn btn-primary" routerLink="/sites/new"><i class="bi bi-plus-lg"></i> Create a Site</a>
 </div>
 }

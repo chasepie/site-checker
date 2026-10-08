@@ -41,7 +41,11 @@ table {
   }
 
   .status-col {
-    width: 125px;
+    width: 200px;
+
+    .badge {
+      margin-left: .25em;
+    }
   }
 
   .vpn-col {

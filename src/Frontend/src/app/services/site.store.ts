@@ -61,11 +61,27 @@ export const SiteStore = signalStore(
       patchState(store, { _selectedSiteId: site.id });
     },
 
-    updateSite: async (site: Site) => {
-      // Without a script, the Site keeps its current one.
-      const request: SiteRequest = { ...site, scraper: { kind: site.scraper.kind, script: null } };
-      const updated = await store._controller.updateSite(site.id, request);
+    createSite: async (request: SiteRequest) => {
+      const created = await store._controller.createSite(request);
+      store._upsertInCache(created);
+      return created;
+    },
+
+    /** Without a script in the request, the Site keeps its current one. */
+    updateSite: async (id: number, request: SiteRequest) => {
+      const updated = await store._controller.updateSite(id, request);
       store._upsertInCache(updated);
+      return updated;
+    },
+
+    deleteSite: async (site: Site) => {
+      await store._controller.deleteSite(site.id);
+      // The delete broadcast skips this client, and never includes the Site's checks.
+      store._removeFromCache(site.id);
+      store._siteCheckStore.removeChecksForSite(site.id);
+      if (store._selectedSiteId() === site.id) {
+        patchState(store, { _selectedSiteId: undefined });
+      }
     },
   })),
 

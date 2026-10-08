@@ -35,7 +35,10 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
   - Deviation: fixed a pre-existing bug in `ControllerGenerator`. Void actions generated `z.void().parse(result)`, which throws on the `null` Angular returns for an empty body, so `deleteSiteCheck`/`deleteAllSiteChecks` threw after succeeding. Void actions are no longer parsed, and a bare (non-`Task`) `ActionResult` return now resolves to void.
   - Deviation: `ScriptUpload` requires both `FileName` and `Source`; on update, a `null` `ScraperRequest.Script` keeps the current script. `TestRunRequest.Name` is optional. `TestRunResult.DurationMilliseconds` is an `int`, because `long` maps to `string` in the type bridge.
   - Deviation: `SiteStore.updateSite` now sends a `SiteRequest` with `script: null`, so the frontend compiles until commit 7 replaces the editor.
-- [ ] 7. Frontend
+- [x] 7. Frontend
+  - Added, for diagnosis while checking the UI end to end: an Information log when a scrape succeeds and when a Test Run ends, and a console warning when a SignalR payload fails its Zod schema (it used to be dropped silently). `VpnStore` now catches its initial loads, since the VPN endpoints fail without Docker.
+  - Verified end to end against a published build (fresh scratchpad database, headless Playwright server on :3123, `USE_LOCAL_BROWSER`): demo seeding, Test Runs of both demo scripts against the live pages, create with compile errors, then a valid script, a real queued check, delete, and a delete from another client.
+  - Open: twice early on, a Test Run's result never showed in the UI although the server logged it as finished. Not reproduced in seven later runs on the same paths.
 - [ ] 8. Release workflow and docs
 - [ ] Remove `PLAN.md`, then open the PR
 

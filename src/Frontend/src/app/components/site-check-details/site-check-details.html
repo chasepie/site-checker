@@ -18,13 +18,31 @@
 
       <div class="col-12 col-sm-6">
         <h5>Status</h5>
-        <div>{{sc.status}}</div>
+        <div>
+          {{sc.status}}
+          @if (sc.failureKind === 'Known') {
+          (Known Failure)
+          } @else if (sc.failureKind === 'Unexpected') {
+          (Unexpected Failure)
+          }
+        </div>
       </div>
 
       <div class="col-12 col-sm-6">
         <h5>VPN Location</h5>
-        <div>{{sc.vpnLocationId ?? ''}}</div>
+        <div>{{ vpnLocation() }}</div>
       </div>
+
+      @if (sc.requestedActions.length > 0) {
+      <div class="col-12">
+        <h5>Requested Actions</h5>
+        <div>
+          @for (action of sc.requestedActions; track action) {
+          <span class="badge text-bg-secondary me-1">{{ requestedActionLabel(action) }}</span>
+          }
+        </div>
+      </div>
+      }
 
       <div class="col-12">
         <h5>Value</h5>

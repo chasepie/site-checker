@@ -68,6 +68,11 @@ public sealed class ScraperService(
             _logger.LogWarning("Scraping {SiteName} (Site Check {SiteCheckId}) found a Known Failure: {Message}",
                 request.Site.Name, request.SiteCheckId, result.Message);
         }
+        else
+        {
+            _logger.LogInformation("Scraped {SiteName} (Site Check {SiteCheckId}) in {Duration}.",
+                request.Site.Name, request.SiteCheckId, result.Duration);
+        }
         return result;
     }
 
