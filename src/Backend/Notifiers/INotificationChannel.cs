@@ -3,7 +3,7 @@ using SiteChecker.Database.Model;
 namespace SiteChecker.Backend.Notifiers;
 
 /// <summary>
-/// A destination notifications are sent to (a Notification Channel in <c>CONTEXT.md</c>).
+/// A destination notifications are sent to (a Notification Channel in <c>GLOSSARY.md</c>).
 /// </summary>
 public interface INotificationChannel
 {

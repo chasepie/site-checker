@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SiteChecker is a self-hosted ASP.NET Core (.NET 10 / C# 14) + Angular 21 app that periodically scrapes websites with Playwright (via Browserless containers, optionally routed through a PIA WireGuard VPN), records each result, and notifies via Pushover or Discord when content changes, a Site starts failing, or it recovers.
 
-Domain vocabulary lives in `CONTEXT.md`; use those terms (Site, Site Check, Queued, Known Failure, ...). Architectural decisions live in `docs/adr/` — don't re-litigate them without reason.
+Domain vocabulary lives in `GLOSSARY.md`; use those terms (Site, Site Check, Queued, Known Failure, ...). Architectural decisions live in `docs/adr/` — don't re-litigate them without reason.
 
 ## Commands
 
@@ -56,7 +56,7 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 
 ### Notifications
 - `SiteCheckRunner` calls `NotifierService.NotifyAsync(siteCheckId)` after saving each outcome (ADR 0002); notifications do **not** hang off the save interceptor. `NotifierService` is the single dispatch path and never throws for a notification problem.
-- The policy (terms in `CONTEXT.md`): a Done check notifies **Updated** when its content differs from the previous Done check (a Site's first Done is only a baseline). A **Failing Run** is reported once, on its first unexpected failure or when its Known Failures reach the Site's `KnownFailuresThreshold`. A Done check ending a reported run notifies **Recovered** (or **Recovered and Updated**). A run counts as reported only once its Failing notification reached a channel (`SiteCheck.ReportedAt`); until then each failure retries. History is ordered by completion (`DoneDate`, then `Id`). Empty Checks never notify but end a Failing Run.
+- The policy (terms in `GLOSSARY.md`): a Done check notifies **Updated** when its content differs from the previous Done check (a Site's first Done is only a baseline). A **Failing Run** is reported once, on its first unexpected failure or when its Known Failures reach the Site's `KnownFailuresThreshold`. A Done check ending a reported run notifies **Recovered** (or **Recovered and Updated**). A run counts as reported only once its Failing notification reached a channel (`SiteCheck.ReportedAt`); until then each failure retries. History is ordered by completion (`DoneDate`, then `Id`). Empty Checks never notify but end a Failing Run.
 - Channels implement `Notifiers/INotificationChannel`: the notifier decides *whether* and which of the Site's settings apply (`Notification.Settings`: Recoveries use failure settings, Recovered and Updated falls back to success), and each channel decides *how*. `SendAsync` returns whether it delivered (`false` when the Site has it off) and must throw on delivery failure. `PushoverChannel` and `DiscordChannel` are registered only when configured. Pushover Emergency alerts carry `retry`/`expire`; Emergency Recoveries are sent at High.
 
 ### Scrapers and Sites
