@@ -20,6 +20,9 @@ services:
       - ./site-checker/data:/app/data
       - ./site-checker/logs:/app/logs
       - ./site-checker/pia:/pia
+      # For VPN rotation. Uploaded scripts run inside this container, and :ro doesn't restrict API
+      # calls on the socket, so anyone who can reach the app can control the host. Keep the app on
+      # trusted networks only (see docs/configuration.md, "Trust boundary").
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       - browserless

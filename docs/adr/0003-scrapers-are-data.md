@@ -1,6 +1,6 @@
 # Sites and their Scrapers are data, not compiled code
 
-> Accepted in [design 0001](../design/0001-scraper-architecture.md); lands with its stage 1. Until then, Scrapers are still `ScraperBase` subclasses.
+> Accepted in [design 0001](../design/0001-scraper-architecture.md); implemented in its stage 1.
 
 Each Site stores its Scraper in a JSON column on `Site`: a flat `ScraperDefinition` with a `Kind` and one nullable payload per kind (Script, then Steps, then Prompt). One shared pipeline runs every kind. We chose this over keeping compiled `ScraperBase` subclasses, because adding a Site took a code change, rebuild and redeploy, and runtime C# scripts use the same Playwright API without one. Keeping compiled Scrapers as an extra kind was rejected because every Site would still go through one of two paths.
 
