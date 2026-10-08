@@ -1,4 +1,4 @@
-namespace SiteChecker.Backend.Test;
+namespace SiteChecker.Backend.IntegrationTests;
 
 using System.Net;
 using System.Net.Http.Json;

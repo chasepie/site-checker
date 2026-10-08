@@ -1,4 +1,4 @@
-namespace SiteChecker.Backend.Test;
+namespace SiteChecker.Backend.IntegrationTests;
 
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.Features;

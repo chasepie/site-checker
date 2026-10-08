@@ -1,4 +1,4 @@
-namespace SiteChecker.Backend.Test;
+namespace SiteChecker.Backend.UnitTests;
 
 using SiteChecker.Database.Model;
 

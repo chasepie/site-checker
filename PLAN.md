@@ -12,7 +12,8 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
 - **Before merge,** the last commit deletes `PLAN.md` ("Remove stage 1 working plan"), so it never reaches `main`.
 
 ### Progress
-- [ ] 1. Reorganize the test projects
+- [x] 1. Reorganize the test projects
+  - Deviation: `Scraper.IntegrationTests` is created in commit 3, with its first tests, because a test project with no tests fails `dotnet test`.
 - [ ] 2. Domain renames and a fresh migration
 - [ ] 3. Scripting contract, runtime compiler and demo scripts
 - [ ] 4. Shared pipeline, new model and switchover

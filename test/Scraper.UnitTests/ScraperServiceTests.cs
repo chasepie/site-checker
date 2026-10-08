@@ -1,4 +1,4 @@
-namespace SiteChecker.Scraper.Test;
+namespace SiteChecker.Scraper.UnitTests;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
