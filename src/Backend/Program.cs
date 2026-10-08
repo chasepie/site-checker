@@ -17,6 +17,7 @@ using SiteChecker.Database.Services;
 using SiteChecker.Backend.Notifiers.Discord;
 using SiteChecker.Backend.Notifiers.Pushover;
 using SiteChecker.Scraper;
+using SiteChecker.Scraper.Scripts;
 using SiteChecker.Backend.Extensions;
 
 namespace SiteChecker.Backend;
@@ -39,6 +40,7 @@ public class Program
         var app = builder.Build();
         ValidateSecuritySettings(app);
         BuildApplication(app);
+        ValidateScraperServices(app);
         await ConfigureDatabaseAsync(app);
 
         await app.RunAsync();
@@ -87,6 +89,7 @@ public class Program
             });
 
         services.AddScraperServices();
+        services.AddScoped<DemoDataSeeder>();
 
         services.AddSiteCheckRunner();
 
@@ -152,14 +155,24 @@ public class Program
         _ = app.Services.GetRequiredService<IOptions<ForwardedHeadersOptions>>().Value;
     }
 
+    /// <summary>
+    /// Fails startup on invalid scrape timeouts, and builds the script compiler's references once,
+    /// up front, rather than on the first check.
+    /// </summary>
+    private static void ValidateScraperServices(WebApplication app)
+    {
+        app.Services.GetRequiredService<ScrapeTimeouts>();
+        app.Services.GetRequiredService<IScriptCompiler>();
+    }
+
     private static async Task ConfigureDatabaseAsync(WebApplication app)
     {
-        using var scope = app.Services.CreateAsyncScope();
+        await using var scope = app.Services.CreateAsyncScope();
         var services = scope.ServiceProvider;
 
         var dbContext = services.GetRequiredService<SiteCheckerDbContext>();
         await dbContext.Database.MigrateAsync();
 
-        await new DataSeeder(dbContext).SeedDataAsync();
+        await services.GetRequiredService<DemoDataSeeder>().SeedAsync(CancellationToken.None);
     }
 }

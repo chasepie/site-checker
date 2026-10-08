@@ -27,6 +27,15 @@ export const PushoverPriority = z.enum([
 	"Low",
 ]);
 
+export const RequestedAction = z.enum([
+	"ChangeVpnLocation",
+	"Retry",
+]);
+
+export const ScraperKind = z.enum([
+	"Script",
+]);
+
 export function PagedResponse<T extends z.ZodType>(itemSchema: T) {
 	return z.object({
 		items: z.array(itemSchema),
@@ -69,6 +78,7 @@ export const SiteUpdate = IEntityWithId.extend({
 	useVpn: z.boolean(),
 	alwaysTakeScreenshot: z.boolean(),
 	knownFailuresThreshold: z.number(),
+	timeoutSeconds: z.number().nullable(),
 	schedule: SiteSchedule,
 	pushoverConfig: PushoverConfig,
 	discordConfig: DiscordConfig,
@@ -81,14 +91,28 @@ export const SiteCheck = IEntityWithId.extend({
 	status: CheckStatus,
 	failureKind: FailureKind.nullable(),
 	reportedAt: z.string().nullable(),
+	requestedActions: z.array(RequestedAction),
 	startDate: z.string(),
 	completedDate: z.string().nullable(),
 	siteId: z.number(),
 });
 export type SiteCheck = z.infer<typeof SiteCheck>;
 
+export const ScriptScraper = z.object({
+	fileName: z.string(),
+	sourceHash: z.string(),
+	uploadedAt: z.string(),
+});
+export type ScriptScraper = z.infer<typeof ScriptScraper>;
+
+export const ScraperDefinition = z.object({
+	kind: ScraperKind,
+	script: ScriptScraper.nullable(),
+});
+export type ScraperDefinition = z.infer<typeof ScraperDefinition>;
+
 export const Site = SiteUpdate.extend({
-	scraperId: z.string(),
+	scraper: ScraperDefinition,
 	siteChecks: z.array(SiteCheck),
 });
 export type Site = z.infer<typeof Site>;

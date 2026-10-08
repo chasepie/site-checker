@@ -8,7 +8,7 @@ public sealed class SiteTests
     [TestMethod]
     public void Update_CopiesEveryEditableSetting()
     {
-        var site = new Site { Name = "Old", Url = new Uri("https://old.example"), ScraperId = "SCRAPER" };
+        var site = new Site { Name = "Old", Url = new Uri("https://old.example") };
         var update = new SiteUpdate
         {
             Id = site.Id,
@@ -17,6 +17,7 @@ public sealed class SiteTests
             UseVpn = true,
             AlwaysTakeScreenshot = true,
             KnownFailuresThreshold = 2,
+            TimeoutSeconds = 45,
         };
 
         site.Update(update);
@@ -26,5 +27,6 @@ public sealed class SiteTests
         Assert.IsTrue(site.UseVpn);
         Assert.IsTrue(site.AlwaysTakeScreenshot);
         Assert.AreEqual(2, site.KnownFailuresThreshold);
+        Assert.AreEqual(45, site.TimeoutSeconds);
     }
 }

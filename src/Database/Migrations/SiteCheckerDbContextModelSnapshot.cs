@@ -36,9 +36,8 @@ namespace SiteChecker.Database.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ScraperId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
+                    b.Property<int?>("TimeoutSeconds")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Url")
                         .IsRequired()
@@ -92,10 +91,29 @@ namespace SiteChecker.Database.Migrations
                                 .HasColumnType("TEXT");
                         });
 
-                    b.HasKey("Id");
+                    b.ComplexProperty(typeof(Dictionary<string, object>), "Scraper", "SiteChecker.Database.Model.Site.Scraper#ScraperDefinition", b1 =>
+                        {
+                            b1.IsRequired();
 
-                    b.HasIndex("ScraperId")
-                        .IsUnique();
+                            b1.Property<int>("Kind");
+
+                            b1.ComplexProperty(typeof(Dictionary<string, object>), "Script", "SiteChecker.Database.Model.Site.Scraper#ScraperDefinition.Script#ScriptScraper", b2 =>
+                                {
+                                    b2.Property<string>("FileName")
+                                        .IsRequired();
+
+                                    b2.Property<string>("SourceHash")
+                                        .IsRequired();
+
+                                    b2.Property<DateTime>("UploadedAt");
+                                });
+
+                            b1
+                                .ToJson("Scraper")
+                                .HasColumnType("TEXT");
+                        });
+
+                    b.HasKey("Id");
 
                     b.ToTable("Sites");
                 });
@@ -117,6 +135,10 @@ namespace SiteChecker.Database.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("ReportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("RequestedActions")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SiteId")
@@ -164,6 +186,20 @@ namespace SiteChecker.Database.Migrations
                     b.ToTable("SiteCheckScreenshots");
                 });
 
+            modelBuilder.Entity("SiteChecker.Database.Model.SiteScript", b =>
+                {
+                    b.Property<int>("SiteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SiteId");
+
+                    b.ToTable("SiteScripts");
+                });
+
             modelBuilder.Entity("SiteChecker.Database.Model.SiteCheck", b =>
                 {
                     b.HasOne("SiteChecker.Database.Model.Site", "Site")
@@ -186,9 +222,22 @@ namespace SiteChecker.Database.Migrations
                     b.Navigation("SiteCheck");
                 });
 
+            modelBuilder.Entity("SiteChecker.Database.Model.SiteScript", b =>
+                {
+                    b.HasOne("SiteChecker.Database.Model.Site", "Site")
+                        .WithOne("SiteScript")
+                        .HasForeignKey("SiteChecker.Database.Model.SiteScript", "SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Site");
+                });
+
             modelBuilder.Entity("SiteChecker.Database.Model.Site", b =>
                 {
                     b.Navigation("SiteChecks");
+
+                    b.Navigation("SiteScript");
                 });
 
             modelBuilder.Entity("SiteChecker.Database.Model.SiteCheck", b =>

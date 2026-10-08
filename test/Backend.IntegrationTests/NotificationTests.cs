@@ -3,7 +3,6 @@ namespace SiteChecker.Backend.IntegrationTests;
 using SiteChecker.Backend.Notifiers;
 using SiteChecker.Database.Model;
 using SiteChecker.Scraper;
-using SiteChecker.Scraper.Exceptions;
 
 /// <summary>
 /// Notifications are tested through the runner: a check finishes, and the recording channel
@@ -16,19 +15,19 @@ public sealed class NotificationTests
 
     private CancellationToken Ct => TestContext.CancellationToken;
 
-    private static SuccessScrapeResult Content(string content, byte[]? screenshot = null)
-        => new() { Content = content, Screenshot = screenshot };
+    private static ScrapeResult Content(string content, byte[]? screenshot = null)
+        => ScrapeResult.Succeeded(content) with { Screenshot = screenshot };
 
-    private static FailureScrapeResult Known()
-        => FailureScrapeResult.FromException(new AccessDeniedScraperException());
+    private static ScrapeResult Known()
+        => ScrapeResult.KnownFailure("Access Denied");
 
-    private static FailureScrapeResult Unexpected(string message)
-        => FailureScrapeResult.FromException(new UnexpectedScraperException(message));
+    private static ScrapeResult Unexpected(string message)
+        => ScrapeResult.Unexpected(message);
 
     /// <summary>
     /// Runs one Site Check per result, in order.
     /// </summary>
-    private async Task RunChecksAsync(RunnerHarness harness, Site site, params IScrapeResult[] results)
+    private async Task RunChecksAsync(RunnerHarness harness, Site site, params ScrapeResult[] results)
     {
         foreach (var result in results)
         {
@@ -262,7 +261,7 @@ public sealed class NotificationTests
         harness.Time.Advance(TimeSpan.FromMinutes(1));
         await harness.Runner.RecordBaselineResetAsync(site.Id, Ct);
         harness.Time.Advance(TimeSpan.FromMinutes(1));
-        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(Content("a"));
+        harness.Scraper.OnScrape = _ => Task.FromResult(Content("a"));
         Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
 
         // No Recovery: the Baseline Reset ended the run and reset the Baseline, so "a" is an update.
@@ -327,7 +326,7 @@ public sealed class NotificationTests
         using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         harness.Notifications.AfterSend = shutdown.Cancel;
         await harness.Runner.RequestCheckAsync(site.Id, Ct);
-        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(Unexpected("boom"));
+        harness.Scraper.OnScrape = _ => Task.FromResult(Unexpected("boom"));
         try
         {
             await harness.Runner.RunNextAsync(shutdown.Token);
@@ -364,7 +363,7 @@ public sealed class NotificationTests
             shutdown.Token.ThrowIfCancellationRequested();
         };
         await harness.Runner.RequestCheckAsync(site.Id, Ct);
-        harness.Scraper.OnScrape = _ => Task.FromResult<IScrapeResult>(Unexpected("boom"));
+        harness.Scraper.OnScrape = _ => Task.FromResult(Unexpected("boom"));
         try
         {
             await harness.Runner.RunNextAsync(shutdown.Token);

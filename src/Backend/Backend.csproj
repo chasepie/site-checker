@@ -26,6 +26,11 @@
     <ProjectReference Include="../Scraper/Scraper.csproj" />
   </ItemGroup>
 
+  <!-- The demo scripts DemoDataSeeder uploads; embedded, not compiled into the Backend. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../samples/DemoScrapers/*.cs" LogicalName="DemoScrapers.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('../LocalPlaywright/LocalPlaywright.esproj')">
     <ProjectReference Include="../LocalPlaywright/LocalPlaywright.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

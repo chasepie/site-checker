@@ -21,23 +21,6 @@ public sealed class ScriptCacheTests
         }
         """;
 
-    /// <summary>
-    /// Counts compiles, so a test can tell a cache hit from a recompile.
-    /// </summary>
-    private sealed class CountingCompiler : IScriptCompiler
-    {
-        public int Compiles { get; private set; }
-
-        public ScriptCompileResult Compile(string source, string fileName)
-        {
-            Compiles++;
-            return Compiler.Compile(source, fileName);
-        }
-
-        public IReadOnlyList<ScriptDiagnostic> Validate(string source, string fileName)
-            => Compiler.Validate(source, fileName);
-    }
-
     [TestMethod]
     public void GetOrCompile_ReusesTheCompiledScript_WhileTheSourceHashIsUnchanged()
     {

@@ -52,3 +52,22 @@ internal static class ScriptTesting
         return !loadContext.IsAlive;
     }
 }
+
+/// <summary>
+/// Counts compiles, so a test can tell a cache hit from a recompile.
+/// </summary>
+internal sealed class CountingCompiler : IScriptCompiler
+{
+    private int _compiles;
+
+    public int Compiles => _compiles;
+
+    public ScriptCompileResult Compile(string source, string fileName)
+    {
+        Interlocked.Increment(ref _compiles);
+        return ScriptTesting.Compiler.Compile(source, fileName);
+    }
+
+    public IReadOnlyList<ScriptDiagnostic> Validate(string source, string fileName)
+        => ScriptTesting.Compiler.Validate(source, fileName);
+}

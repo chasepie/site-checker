@@ -205,7 +205,7 @@ public sealed class SiteCheckRunner : IDisposable
         }
 
         var siteCheck = new SiteCheck(site, _timeProvider.GetUtcNow().UtcDateTime);
-        siteCheck.Update(new SuccessScrapeResult { Content = BaselineResetContent }, _timeProvider.GetUtcNow().UtcDateTime);
+        siteCheck.Update(ScrapeResult.Succeeded(BaselineResetContent), _timeProvider.GetUtcNow().UtcDateTime);
         dbContext.SiteChecks.Add(siteCheck);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -360,10 +360,12 @@ public sealed class SiteCheckRunner : IDisposable
 
         var siteCheck = await dbContext.SiteChecks
             .Include(sc => sc.Site)
+            .ThenInclude(s => s.SiteScript)
             .FirstAsync(sc => sc.Id == siteCheckId, cancellationToken);
+        var site = siteCheck.Site;
 
-        var browserType = _scraperService.GetBrowserType(siteCheck.Site.UseVpn);
-        siteCheck.VpnLocationId = await GetVpnLocationAsync(browserType, cancellationToken);
+        var browserType = _scraperService.GetBrowserType(site.UseVpn);
+        siteCheck.VpnLocationId = (await GetVpnLocationAsync(browserType, cancellationToken))?.Id;
 
         // Save before scraping so clients receive a real-time status update via SignalR while the
         // (potentially long-running) scrape is in progress. An EF Core SaveChanges interceptor
@@ -375,13 +377,15 @@ public sealed class SiteCheckRunner : IDisposable
 
         var request = new ScrapeRequest
         {
-            Id = siteCheck.Id,
-            ScraperId = siteCheck.Site.ScraperId,
+            SiteCheckId = siteCheck.Id,
+            Site = new ScrapeSite(site.Id, site.Name, site.Url, site.UseVpn),
+            Scraper = ToScraperSpec(site),
             BrowserType = browserType,
-            AlwaysTakeScreenshot = siteCheck.Site.AlwaysTakeScreenshot,
+            Timeout = site.TimeoutSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+            AlwaysTakeScreenshot = site.AlwaysTakeScreenshot,
         };
 
-        var result = await _scraperService.ScrapeContentAsync(request);
+        var result = await _scraperService.ScrapeAsync(request, cancellationToken);
         siteCheck.Update(result, _timeProvider.GetUtcNow().UtcDateTime);
 
         if (result.Screenshot is not null)
@@ -392,6 +396,16 @@ public sealed class SiteCheckRunner : IDisposable
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    /// <exception cref="InvalidOperationException">The Site's Scraper is missing its payload or source.</exception>
+    private static ScriptSpec ToScraperSpec(Site site) => site.Scraper.Kind switch
+    {
+        ScraperKind.Script when site.Scraper.Script is { } script && site.SiteScript is { } source
+            => new ScriptSpec(script.FileName, source.Source, script.SourceHash),
+        ScraperKind.Script
+            => throw new InvalidOperationException($"Site {site.Id} has a Script Scraper but no script."),
+        _ => throw new InvalidOperationException($"Site {site.Id} has an unsupported Scraper kind: {site.Scraper.Kind}."),
+    };
 
     /// <summary>
     /// Records a Site Check as Failed using a fresh DbContext, so that whatever broke the check
@@ -417,28 +431,22 @@ public sealed class SiteCheckRunner : IDisposable
     }
 
     /// <summary>
-    /// Resolves the location label used for the current check based on browser mode. If using a
-    /// VPN, may change the VPN Location if the configured interval has elapsed.
+    /// Resolves the VPN Location the check runs on, or <c>null</c> if it doesn't use the VPN. May
+    /// change the VPN Location first, if the configured interval has elapsed.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown if an unsupported browser type is encountered.</exception>
-    private async Task<string> GetVpnLocationAsync(BrowserType browserType, CancellationToken cancellationToken)
+    private async Task<PiaLocation?> GetVpnLocationAsync(BrowserType browserType, CancellationToken cancellationToken)
     {
-        if (browserType == BrowserType.Local)
+        if (browserType is BrowserType.Local or BrowserType.Browserless)
         {
-            return "Local browser";
-        }
-
-        if (browserType == BrowserType.Browserless)
-        {
-            return "No VPN";
+            return null;
         }
 
         if (browserType == BrowserType.BrowserlessVpn)
         {
-            var location = _timeProvider.GetElapsedTime(_lastVpnChangeTimestamp) >= _vpnChangeInterval
+            return _timeProvider.GetElapsedTime(_lastVpnChangeTimestamp) >= _vpnChangeInterval
                 ? await ChangeVpnRegionAsync(cancellationToken)
                 : await _piaService.GetCurrentLocationAsync(cancellationToken);
-            return location.Name;
         }
 
         throw new InvalidOperationException($"Unsupported browser type: {browserType}");
