@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 using SiteChecker.Scraper.Exceptions;
+using SiteChecker.Scraper.Scripts;
 using SiteChecker.Scraper.Scrapers;
 
 namespace SiteChecker.Scraper;
@@ -155,6 +156,8 @@ public static class ScraperServiceExtensions
         public IServiceCollection AddScraperServices()
         {
             return services
+                .AddSingleton<IScriptCompiler, ScriptCompiler>()
+                .AddSingleton<ScriptCache>()
                 .AddSingleton<IScraperService, ScraperService>()
                 .AddScraper<PiaLocationScraper>()
                 .AddScraper<BotDetectionScraper>();

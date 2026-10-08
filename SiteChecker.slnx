@@ -7,9 +7,12 @@
   <Project Path="src/Backend/Backend.csproj" />
   <Project Path="src/Database/Database.csproj" />
   <Project Path="src/Scraper/Scraper.csproj" />
+  <Project Path="src/Scripting/Scripting.csproj" />
   <Project Path="src/Utilities/Utilities.csproj" />
+  <Project Path="samples/DemoScrapers/DemoScrapers.csproj" />
   <Project Path="test/Backend.IntegrationTests/Backend.IntegrationTests.csproj" />
   <Project Path="test/Backend.UnitTests/Backend.UnitTests.csproj" />
+  <Project Path="test/Scraper.IntegrationTests/Scraper.IntegrationTests.csproj" />
   <Project Path="test/Scraper.UnitTests/Scraper.UnitTests.csproj" />
   <Project Path="test/Utilities.UnitTests/Utilities.UnitTests.csproj" />
   <Project Path="src/Frontend/Frontend.esproj">

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 using SiteChecker.Scraper.Exceptions;
 using SiteChecker.Scraper.Extensions;
+using SiteChecker.Scripting;
 using SiteChecker.Utilities;
 
 namespace SiteChecker.Scraper.Scrapers;

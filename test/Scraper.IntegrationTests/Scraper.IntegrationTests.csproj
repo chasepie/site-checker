@@ -1,0 +1,16 @@
+<Project Sdk="MSTest.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Scraper\Scraper.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Compiled by the tests with the runtime compiler, exactly as the app compiles uploads. -->
+    <None Include="..\..\samples\DemoScrapers\*.cs" Link="DemoScrapers\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
