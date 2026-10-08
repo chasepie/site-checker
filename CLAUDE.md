@@ -28,6 +28,9 @@ npm run lint
 npx ng test --watch=false
 npx ng test --watch=false --include src/app/components/site-list/site-list.spec.ts
 
+# The script contract package (published by .github/workflows/release.yml on a v* tag)
+dotnet pack src/Scripting -c Release -p:Version=0.1.0
+
 # EF Core migrations (run from src/Database; dotnet-ef is in the local tool manifest)
 dotnet tool restore
 dotnet ef migrations add <Name>
@@ -40,6 +43,7 @@ Build notes:
 - Building `src/Backend` also builds the Angular app (an `AfterTargets="Build"` step in `Backend.csproj`) and regenerates `src/Frontend/src/app/generated/model.ts`. Node/npm must be available.
 - Package versions are central in `Directory.Packages.props`, and every project has a `packages.lock.json`. CI restores with `--locked-mode`, so commit lock file changes along with version bumps.
 - Most frontend specs are untouched Angular scaffolding and currently fail (missing providers). The `auth.service`, `signalr.service` and `site-editor` specs are real and pass, so run those with `--include`. CI only runs the backend tests.
+- `samples/DemoScrapers` builds with the solution, so CI compiles the demo scripts against the contract. The Backend embeds those same files for `DemoDataSeeder`.
 
 ## Architecture
 
@@ -96,7 +100,9 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.
+- `SCRAPE_TIMEOUT` (seconds, default 120) is the default Site timeout. `BROWSERLESS_TIMEOUT` (ms, default 180000) is passed to Browserless as `TIMEOUT` too, and every timeout must leave 10 s under it (`ScrapeTimeouts`; startup fails otherwise). `SEED_DEMO_DATA` turns the demo Sites on or off (default: Development only).
 - **Login** (ADR 0006): `ADMIN_PASSWORD` (`AdminPassword`) is the only credential; `AuthController` logs in to an HttpOnly, `SameSite=Strict` cookie lasting `SESSION_DAYS`. A fallback authorization policy puts **every endpoint behind the login by default**, so mark new public endpoints `[AllowAnonymous]` deliberately. Every controller write needs the antiforgery token (`ValidateAntiforgeryFilter`; Angular's HttpClient sends `X-XSRF-TOKEN` from the `XSRF-TOKEN` cookie that the session and login endpoints issue; the token is never read from a form field). Login attempts are limited per client and in all by `LoginThrottle`, which the login action calls (not the rate limiting middleware, so requests that can't log in don't count), the hub refuses other origins (`HubOriginCheck`: `Sec-Fetch-Site`, else the `Origin` host), and a logout closes its own session's hub connections (`HubConnections`, by the login's session id claim). `ALLOWED_HOSTS` restricts Host headers, and `TRUSTED_PROXIES` lists the reverse proxies whose `X-Forwarded-For`/`-Proto` are believed (none by default). Both `ADMIN_PASSWORD` and `ALLOWED_HOSTS` are required outside Development; without the password in Development, login is off. Keep the app on trusted networks: the login is one shared password.
+- **Trust boundary** (ADR 0004): scripts run unsandboxed in the app, which mounts the Docker socket, so anyone who can log in can run code on the host. Don't add features that assume otherwise.
 
 ## Microsoft documentation
 

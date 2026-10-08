@@ -39,7 +39,10 @@ Adding a Site today takes a new `ScraperBase` subclass, an `AddScraper<T>()` cal
   - Added, for diagnosis while checking the UI end to end: an Information log when a scrape succeeds and when a Test Run ends, and a console warning when a SignalR payload fails its Zod schema (it used to be dropped silently). `VpnStore` now catches its initial loads, since the VPN endpoints fail without Docker.
   - Verified end to end against a published build (fresh scratchpad database, headless Playwright server on :3123, `USE_LOCAL_BROWSER`): demo seeding, Test Runs of both demo scripts against the live pages, create with compile errors, then a valid script, a real queued check, delete, and a delete from another client.
   - Open: twice early on, a Test Run's result never showed in the UI although the server logged it as finished. Not reproduced in seven later runs on the same paths.
-- [ ] 8. Release workflow and docs
+- [x] 8. Release workflow and docs
+  - Checked: `dotnet pack src/Scripting -p:Version=0.1.0` produces only the contract DLL and its XML docs, depending on Microsoft.Playwright and Microsoft.Extensions.Logging.Abstractions. The workflow itself runs only when a `v*` tag is pushed.
+  - Added "Upgrading to Sites as data" to docs/configuration.md (delete the old database first). `VPN_CHANGE_INTERVAL`'s documented default is corrected to 15 (Compose sets 10).
+  - Left uncommitted: the `.playwright-mcp/` line in `.gitignore`, which is the user's own edit.
 - [ ] Remove `PLAN.md`, then open the PR
 
 ## Decisions

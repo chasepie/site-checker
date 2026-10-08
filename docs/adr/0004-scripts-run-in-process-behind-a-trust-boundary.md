@@ -1,6 +1,6 @@
 # Script Scrapers run in-process and unsandboxed, behind a network trust boundary
 
-> Accepted in [design 0001](../design/0001-scraper-architecture.md); lands with its stage 1.
+> Accepted in [design 0001](../design/0001-scraper-architecture.md); implemented in its stage 1.
 >
 > **Amended by [ADR 0006](0006-a-single-user-login-with-cookie-sessions.md):** the app now has a login, which covers the whole app.
 
