@@ -143,6 +143,7 @@ public static class PiaServiceExtensions
     {
         public IServiceCollection AddPiaService()
         {
+            services.AddHttpClient<PiaServerList>();
             return services
                 .AddSingleton<IPiaContainers, DockerPiaContainers>()
                 .AddSingleton<PiaService>();
