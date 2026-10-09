@@ -1,22 +1,20 @@
 namespace SiteChecker.Scraper.UnitTests;
 
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using SiteChecker.Scraper;
 using SiteChecker.Scraper.Browsers;
 
 [TestClass]
-public sealed class BrowserProviderTests
+public sealed class BrowserSelectorTests
 {
-    private static BrowserProvider CreateService(IConfiguration config)
-        => new(config, NullLogger<BrowserProvider>.Instance);
+    private static BrowserSelector CreateService(IConfiguration config) => new(config);
 
     [TestMethod]
     public void GetBrowserType_ReturnsLocal_WhenUseLocalBrowserIsTrue_UseVpnFalse()
     {
         var config = Substitute.For<IConfiguration>();
-        config[BrowserProvider.UseLocalBrowserKey].Returns("true");
+        config[BrowserSelector.UseLocalBrowserKey].Returns("true");
         var service = CreateService(config);
 
         Assert.AreEqual(BrowserType.Local, service.GetBrowserType(false));
@@ -26,7 +24,7 @@ public sealed class BrowserProviderTests
     public void GetBrowserType_ReturnsLocal_WhenUseLocalBrowserIsTrue_UseVpnTrue()
     {
         var config = Substitute.For<IConfiguration>();
-        config[BrowserProvider.UseLocalBrowserKey].Returns("true");
+        config[BrowserSelector.UseLocalBrowserKey].Returns("true");
         config[BrowserProvider.BrowserlessUrlVpnKey].Returns("http://vpn-host");
         var service = CreateService(config);
 
@@ -37,7 +35,7 @@ public sealed class BrowserProviderTests
     public void GetBrowserType_DoesNotReturnLocal_WhenUseLocalBrowserIsFalse()
     {
         var config = Substitute.For<IConfiguration>();
-        config[BrowserProvider.UseLocalBrowserKey].Returns("false");
+        config[BrowserSelector.UseLocalBrowserKey].Returns("false");
         config[BrowserProvider.BrowserlessUrlKey].Returns("http://browserless-host");
         var service = CreateService(config);
 

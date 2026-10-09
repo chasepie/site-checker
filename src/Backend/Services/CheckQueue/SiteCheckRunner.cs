@@ -37,6 +37,7 @@ public sealed class SiteCheckRunner : IDisposable
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IScraperService _scraperService;
+    private readonly FailureArtifacts _failureArtifacts;
     private readonly PiaService _piaService;
     private readonly NotifierService _notifier;
     private readonly TimeProvider _timeProvider;
@@ -74,6 +75,7 @@ public sealed class SiteCheckRunner : IDisposable
     public SiteCheckRunner(
         IServiceScopeFactory scopeFactory,
         IScraperService scraperService,
+        FailureArtifacts failureArtifacts,
         PiaService piaService,
         NotifierService notifier,
         TimeProvider timeProvider,
@@ -82,6 +84,7 @@ public sealed class SiteCheckRunner : IDisposable
     {
         _scopeFactory = scopeFactory;
         _scraperService = scraperService;
+        _failureArtifacts = failureArtifacts;
         _piaService = piaService;
         _notifier = notifier;
         _timeProvider = timeProvider;
@@ -438,6 +441,7 @@ public sealed class SiteCheckRunner : IDisposable
         var scraper = ToScraperSpec(site);
 
         BrowserType browserType;
+        ScrapeRequest request;
         ScrapeResult result;
         await _scrapeLock.WaitAsync(cancellationToken);
         try
@@ -453,7 +457,7 @@ public sealed class SiteCheckRunner : IDisposable
             dbContext.Entry(siteCheck).Property(sc => sc.Status).IsModified = true;
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            var request = new ScrapeRequest
+            request = new ScrapeRequest
             {
                 SiteCheckId = siteCheck.Id,
                 Site = new ScrapeSite(site.Id, site.Name, site.Url, site.UseVpn),
@@ -468,6 +472,11 @@ public sealed class SiteCheckRunner : IDisposable
         finally
         {
             _scrapeLock.Release();
+        }
+
+        if (result.Outcome == ScrapeOutcome.UnexpectedFailure)
+        {
+            await _failureArtifacts.WriteAsync(request, result, cancellationToken);
         }
 
         await RecordOutcomeAsync(dbContext, siteCheck, result, browserType, cancellationToken);

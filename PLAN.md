@@ -48,7 +48,11 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
     - `AllLocations` returns 54 US locations from the live list, and `ChangeLocation` writes `loc.txt` and restarts both VPN containers by name
   - Checked in `thrnz/docker-wireguard-pia`'s `run`: an empty `LOCAL_NETWORK` is treated as unset (`[ -n ... ]`).
   - Not checked: the real PIA VPN container with the env split (needs PIA credentials).
-- [ ] 4. A serializable scrape contract
+- [x] 4. A serializable scrape contract
+  - Deviation: `GetBrowserType` stays on `IScraperService` (both implementations delegate to the new `BrowserSelector`), so the runner, `RunTestAsync` and the harness's `FakeScraperService.BrowserType` don't change. `BrowserProvider` only connects now.
+  - Deviation: the captured logs are `ScrapeResult.Logs` (`ScraperLogEntry`, `ScraperLog`), not `ScriptLogs`: the pipeline creates the log and hands it to every executor through `ExecutorContext.Log`, so it isn't Script-specific, and the pipeline attaches it to every result, including timeouts and scripts that throw. Debug and above are recorded; Trace is only passed on.
+  - The failure dumps' `.log` now includes the Scraper log, and the runner writes the dumps after releasing the scrape lock.
+  - `CLAUDE.md`'s pipeline bullet was rewritten here, since it described the pipeline writing dumps.
 - [ ] 5. Abandoned runs
 - [ ] 6. The Scrape Worker
 - [ ] 7. RemoteScraperService

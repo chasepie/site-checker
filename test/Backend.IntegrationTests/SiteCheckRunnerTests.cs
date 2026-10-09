@@ -254,6 +254,35 @@ public sealed class SiteCheckRunnerTests
     }
 
     [TestMethod]
+    public async Task RunNext_WritesFailureDumps_ForAnUnexpectedFailure()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        var requested = await harness.Runner.RequestCheckAsync(site.Id, Ct);
+        harness.Scraper.OnScrape = _ => Task.FromResult(
+            ScrapeResult.Unexpected(new InvalidOperationException("selector not found")) with { PageHtml = "<html>page</html>" });
+
+        Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
+
+        var filePathBase = Path.Combine(harness.FailureDumpsDirectory, $"{requested!.Id}_{site.Id}");
+        Assert.AreEqual("<html>page</html>", await File.ReadAllTextAsync($"{filePathBase}.html", Ct));
+        Assert.Contains("selector not found", await File.ReadAllTextAsync($"{filePathBase}.log", Ct));
+    }
+
+    [TestMethod]
+    public async Task RunNext_WritesNoFailureDumps_ForAKnownFailure()
+    {
+        await using var harness = await RunnerHarness.CreateAsync(Ct);
+        var site = await harness.AddSiteAsync(null, Ct);
+        await harness.Runner.RequestCheckAsync(site.Id, Ct);
+        harness.Scraper.OnScrape = _ => Task.FromResult(ScrapeResult.KnownFailure("Access Denied"));
+
+        Assert.IsTrue(await harness.Runner.RunNextAsync(Ct));
+
+        Assert.IsFalse(Directory.Exists(harness.FailureDumpsDirectory));
+    }
+
+    [TestMethod]
     public async Task RunNext_RecordsFailed_WhenSavingResultFails()
     {
         await using var harness = await RunnerHarness.CreateAsync(Ct);

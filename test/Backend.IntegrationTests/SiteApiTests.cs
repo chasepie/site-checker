@@ -151,12 +151,14 @@ public sealed class SiteApiTests
         Assert.AreEqual("Renamed", (string?)site["name"]);
         Assert.AreEqual(60, site["timeoutSeconds"]!.GetValue<int>());
         Assert.AreEqual(ScriptSource.Hash(HelloScript), (string?)site["scraper"]!["script"]!["sourceHash"]);
+        Assert.IsEmpty(factory.Scraper.Evictions);
 
         var replaced = await client.PutAsJsonAsync($"/api/site/{id}", SiteBody(GoodbyeScript, "Goodbye.cs", id: id), Ct);
         Assert.AreEqual(HttpStatusCode.OK, replaced.StatusCode, await replaced.Content.ReadAsStringAsync(Ct));
         Assert.AreEqual("Goodbye.cs", (string?)(await ReadJsonAsync(replaced))["scraper"]!["script"]!["fileName"]);
         var source = JsonNode.Parse(await client.GetStringAsync($"/api/site/{id}/script", Ct))!;
         Assert.AreEqual(GoodbyeScript, (string?)source["source"]);
+        Assert.AreEqual(id, Assert.ContainsSingle(factory.Scraper.Evictions));
     }
 
     [TestMethod]
@@ -180,6 +182,7 @@ public sealed class SiteApiTests
         await using var check = factory.CreateDbContext();
         Assert.IsFalse(await check.SiteChecks.AnyAsync(Ct));
         Assert.IsFalse(await check.SiteScripts.AnyAsync(Ct));
+        Assert.AreEqual(id, Assert.ContainsSingle(factory.Scraper.Evictions));
     }
 
     [TestMethod]

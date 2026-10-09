@@ -1,6 +1,7 @@
 namespace SiteChecker.Scraper.IntegrationTests;
 
 using System.Runtime.Loader;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Playwright;
 using NSubstitute;
@@ -33,11 +34,24 @@ public sealed class ScriptExecutorTests
 
     private ScriptExecutor CreateExecutor(ScriptCache cache) => new(cache, _compiler, NullLoggerFactory.Instance);
 
+    private const string LoggingScript = """
+        public sealed class Chatty : IScript
+        {
+            public Task<ScriptOutcome> RunAsync(ScriptContext ctx)
+            {
+                ctx.Logger.LogInformation("Checking {Site}", ctx.Site.Name);
+                ctx.Logger.LogWarning(new InvalidOperationException("odd page"), "Something looks off");
+                throw new InvalidOperationException("gave up");
+            }
+        }
+        """;
+
     private static ExecutorContext Context(
         string source,
         int? siteCheckId,
         string fileName = "Script.cs",
-        BrowserType browserType = BrowserType.Browserless) => new(
+        BrowserType browserType = BrowserType.Browserless,
+        ScraperLog? log = null) => new(
         Substitute.For<IPage>(),
         NavigationResult.FromResponse(null),
         new ScrapeRequest
@@ -47,6 +61,7 @@ public sealed class ScriptExecutorTests
             Scraper = new ScriptSpec(fileName, source, ScriptSource.Hash(source)),
             BrowserType = browserType,
         },
+        log ?? new ScraperLog(),
         CancellationToken.None);
 
     [TestMethod]
@@ -126,5 +141,20 @@ public sealed class ScriptExecutorTests
             GC.WaitForPendingFinalizers();
         }
         return !AssemblyLoadContext.All.Any(c => c.Name == name);
+    }
+
+    [TestMethod]
+    public async Task ScriptLogs_AreRecorded_EvenWhenTheScriptThrows()
+    {
+        using var cache = new ScriptCache(_compiler);
+        var log = new ScraperLog();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CreateExecutor(cache).ExecuteAsync(Context(LoggingScript, siteCheckId: 1, log: log)));
+
+        Assert.HasCount(2, log.Entries);
+        Assert.AreEqual("Checking Site", log.Entries[0].Message);
+        Assert.AreEqual(LogLevel.Warning, log.Entries[1].Level);
+        Assert.Contains("odd page", log.Entries[1].Exception!);
     }
 }

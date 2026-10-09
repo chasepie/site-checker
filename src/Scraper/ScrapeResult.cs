@@ -46,11 +46,29 @@ public sealed record ScrapeResult
     public IReadOnlyList<ScriptDiagnostic> Diagnostics { get; init; } = [];
 
     /// <summary>
-    /// The exception behind an Unexpected Failure, if there was one.
+    /// The full type name of the exception behind an Unexpected Failure, if there was one.
     /// </summary>
-    public Exception? Exception { get; init; }
+    public string? ExceptionType { get; init; }
+
+    /// <summary>
+    /// The exception behind an Unexpected Failure as text (<see cref="Exception.ToString"/>), with
+    /// its stack trace and inner exceptions. Strings rather than the exception, so a result means
+    /// the same after crossing a process boundary.
+    /// </summary>
+    public string? ExceptionDetail { get; init; }
 
     public byte[]? Screenshot { get; init; }
+
+    /// <summary>
+    /// The page's HTML at the end of a Site Check's Unexpected Failure, for the failure dumps.
+    /// Test Runs don't capture it.
+    /// </summary>
+    public string? PageHtml { get; init; }
+
+    /// <summary>
+    /// What the Scraper logged during the run, capped (see <see cref="ScraperLog"/>).
+    /// </summary>
+    public IReadOnlyList<ScraperLogEntry> Logs { get; init; } = [];
 
     /// <summary>
     /// How long the scrape took, from opening the browser to the last artifact.
@@ -66,8 +84,13 @@ public sealed record ScrapeResult
     public static ScrapeResult KnownFailure(string message, IReadOnlyList<RequestedAction>? requestedActions = null)
         => new() { Outcome = ScrapeOutcome.KnownFailure, Message = message, RequestedActions = requestedActions ?? [] };
 
-    public static ScrapeResult Unexpected(string message, Exception? exception = null)
-        => new() { Outcome = ScrapeOutcome.UnexpectedFailure, Message = message, Exception = exception };
+    public static ScrapeResult Unexpected(string message, Exception? exception = null) => new()
+    {
+        Outcome = ScrapeOutcome.UnexpectedFailure,
+        Message = message,
+        ExceptionType = exception?.GetType().FullName,
+        ExceptionDetail = exception?.ToString(),
+    };
 
     public static ScrapeResult Unexpected(Exception exception)
     {
