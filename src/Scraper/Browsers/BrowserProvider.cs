@@ -6,16 +6,10 @@ using Microsoft.Playwright;
 namespace SiteChecker.Scraper.Browsers;
 
 /// <summary>
-/// Chooses and connects to the browser a scrape runs in.
+/// Connects to the browser a scrape runs in.
 /// </summary>
 public interface IBrowserProvider
 {
-    /// <summary>
-    /// The browser for a Site: local Playwright when <c>USE_LOCAL_BROWSER</c> is set, otherwise
-    /// Browserless or Browserless VPN, depending on the Site and which URLs are configured.
-    /// </summary>
-    BrowserType GetBrowserType(bool useVpn);
-
     /// <summary>
     /// Connects to the browser and returns a 1920×1080 page in it.
     /// </summary>
@@ -42,32 +36,9 @@ public sealed class BrowserProvider(
 {
     public const string BrowserlessUrlKey = "BROWSERLESS_URL";
     public const string BrowserlessUrlVpnKey = "BROWSERLESS_URL_VPN";
-    public const string UseLocalBrowserKey = "USE_LOCAL_BROWSER";
 
     private readonly IConfiguration _config = config;
     private readonly ILogger<BrowserProvider> _logger = logger;
-
-    public BrowserType GetBrowserType(bool useVpn)
-    {
-        if (bool.TryParse(_config[UseLocalBrowserKey], out var useLocal) && useLocal)
-        {
-            return BrowserType.Local;
-        }
-
-        var browserlessUrlVpn = _config[BrowserlessUrlVpnKey];
-        if (!string.IsNullOrWhiteSpace(browserlessUrlVpn) && useVpn)
-        {
-            return BrowserType.BrowserlessVpn;
-        }
-
-        var browserlessUrl = _config[BrowserlessUrlKey];
-        if (!string.IsNullOrWhiteSpace(browserlessUrl) && !useVpn)
-        {
-            return BrowserType.Browserless;
-        }
-
-        return BrowserType.Local;
-    }
 
     public async Task<IBrowserSession> OpenAsync(BrowserType browserType, CancellationToken cancellationToken)
     {

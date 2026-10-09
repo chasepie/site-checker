@@ -38,7 +38,7 @@ public static class SiteCheckExtensions
                     siteCheck.Value = result.Message;
                     siteCheck.FailureKind = FailureKind.Unexpected;
 
-                    var exceptionType = result.Exception?.GetType().FullName;
+                    var exceptionType = result.ExceptionType;
                     if (!string.IsNullOrEmpty(exceptionType))
                     {
                         // Create a new dictionary to ensure EF Core detects the change

@@ -23,13 +23,14 @@ public interface IScrapeExecutor
 }
 
 /// <summary>
-/// What an executor gets: the loaded page, how navigating to it went, the request, and a token
-/// that's cancelled at the Site's timeout.
+/// What an executor gets: the loaded page, how navigating to it went, the request, the log the
+/// Scraper's own logging should be recorded in, and a token that's cancelled at the Site's timeout.
 /// </summary>
 public sealed record ExecutorContext(
     IPage Page,
     NavigationResult Navigation,
     ScrapeRequest Request,
+    ScraperLog Log,
     CancellationToken CancellationToken);
 
 /// <summary>
@@ -88,7 +89,7 @@ public sealed class ScriptExecutor(
                 Navigation = context.Navigation,
                 CancellationToken = context.CancellationToken,
                 Site = new ScriptSite(request.Site.Name, request.Site.Url, request.BrowserType == BrowserType.BrowserlessVpn),
-                Logger = _scriptLogger,
+                Logger = context.Log.Wrap(_scriptLogger),
             });
 
             if (outcome is null)
