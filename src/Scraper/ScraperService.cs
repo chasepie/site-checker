@@ -40,8 +40,8 @@ public interface IScraperService
 /// Playwright calls take no cancellation token, and a script only stops if it checks one, so the
 /// timeout is enforced from outside: the executor runs on the thread pool, and at the timeout the
 /// pipeline stops waiting, takes the screenshot, and closes the browser, which makes any pending
-/// Playwright call throw. A script stuck in a synchronous loop keeps its thread until the app
-/// restarts (see <c>docs/adr/0004-scripts-run-in-process-behind-a-trust-boundary.md</c>).
+/// Playwright call throw. A script stuck in a synchronous loop keeps its thread; the
+/// <see cref="IAbandonedRunMonitor"/> decides whether that ends the process.
 /// </remarks>
 public sealed class ScraperService(
     BrowserSelector browserSelector,
@@ -49,6 +49,7 @@ public sealed class ScraperService(
     IEnumerable<IScrapeExecutor> executors,
     ScriptCache scriptCache,
     ScrapeTimeouts timeouts,
+    IAbandonedRunMonitor abandonedRuns,
     TimeProvider timeProvider,
     ILogger<ScraperService> logger) : IScraperService
 {
@@ -57,6 +58,7 @@ public sealed class ScraperService(
     private readonly IReadOnlyList<IScrapeExecutor> _executors = executors.ToList();
     private readonly ScriptCache _scriptCache = scriptCache;
     private readonly ScrapeTimeouts _timeouts = timeouts;
+    private readonly IAbandonedRunMonitor _abandonedRuns = abandonedRuns;
     private readonly TimeProvider _timeProvider = timeProvider;
     private readonly ILogger<ScraperService> _logger = logger;
 
@@ -165,7 +167,7 @@ public sealed class ScraperService(
             {
                 // Makes any Playwright call the abandoned run is waiting on throw.
                 await session.CloseAsync();
-                ObserveAbandoned(run, request);
+                _abandonedRuns.Track(run, request);
             }
 
             return result;
@@ -232,16 +234,6 @@ public sealed class ScraperService(
             return null;
         }
     }
-
-    private void ObserveAbandoned(Task run, ScrapeRequest request)
-    {
-        _ = run.ContinueWith(
-            t => _logger.LogInformation(t.Exception?.GetBaseException(),
-                "The timed-out run for {SiteName} (Site Check {SiteCheckId}) has ended.", request.Site.Name, request.SiteCheckId),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-    }
 }
 
 public static class ScraperServiceExtensions
@@ -251,6 +243,8 @@ public static class ScraperServiceExtensions
         public IServiceCollection AddScraperServices()
         {
             services.TryAddSingleton(TimeProvider.System);
+            // A host that can restart (the Scrape Worker) registers one that stops the process.
+            services.TryAddSingleton<IAbandonedRunMonitor, LoggingAbandonedRunMonitor>();
             return services
                 .AddSingleton<BrowserSelector>()
                 .AddSingleton<IBrowserProvider, BrowserProvider>()
