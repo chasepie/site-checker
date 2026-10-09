@@ -19,10 +19,12 @@ COPY --parents src/**/packages.lock.json ./
 COPY ["Directory.*.props", "./"]
 COPY ["global.json", "./"]
 
-RUN dotnet restore src/Backend --locked-mode -v $VERBOSITY
+RUN dotnet restore src/Backend --locked-mode -v $VERBOSITY \
+  && dotnet restore src/ScrapeWorker --locked-mode -v $VERBOSITY
 COPY . .
 
-RUN dotnet build src/Backend -c $CONFIGURATION -v $VERBOSITY
+RUN dotnet build src/Backend -c $CONFIGURATION -v $VERBOSITY \
+  && dotnet build src/ScrapeWorker -c $CONFIGURATION -v $VERBOSITY
 
 
 FROM build AS publish
@@ -32,18 +34,35 @@ RUN dotnet publish src/Backend \
   -v $VERBOSITY \
   --no-build \
   -p:UseAppHost=false
+RUN dotnet publish src/ScrapeWorker \
+  -c $CONFIGURATION \
+  -o /app/worker \
+  -v $VERBOSITY \
+  --no-build \
+  -p:UseAppHost=false
 
 
-FROM base AS final
+# What the app and the Scrape Worker images share.
+FROM base AS runtime
 # The base image has no curl, which the healthcheck needs.
 RUN apt-get -y update \
   && apt-get -y install --no-install-recommends curl \
   && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY --from=publish /app/publish .
 
-# The image's non-root user. Bind-mounted data, logs and pia directories must be writable by it.
+# The image's non-root user. The app's bind-mounted data, logs and pia directories must be
+# writable by it.
 USER $APP_UID
 
 HEALTHCHECK CMD curl --fail http://localhost:8080/healthz || exit 1
+
+
+# Runs scrapes for the app (docker-compose.yml builds it with `target: worker`).
+FROM runtime AS worker
+COPY --from=publish /app/worker .
+CMD ["dotnet", "ScrapeWorker.dll"]
+
+
+# The app; last, so it's what a plain `docker build` produces.
+FROM runtime AS app
+COPY --from=publish /app/publish .
 CMD ["dotnet", "Backend.dll"]

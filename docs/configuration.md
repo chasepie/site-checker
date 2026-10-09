@@ -23,6 +23,7 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 | `PUSHOVER_USER`               | No       | Pushover user key                                                                         |
 | `DISCORD_TOKEN`               | No       | Discord bot token for notifications                                                       |
 | `HEALTHCHECKS_URL`            | No       | Healthchecks.io ping URL for uptime monitoring                                            |
+| `SCRAPE_WORKER_URL`           | Docker   | Where the Scrape Worker listens. Docker Compose sets it (`http://scrape-worker:8080`), so scripts run in the worker's container rather than the app's. When unset, the app runs scrapes itself, which is meant for local development, and warns at startup if it's in a container |
 | `DOCKER_HOST`                 | No       | The Docker API the app restarts the VPN containers through. Docker Compose sets it to the socket proxy (`tcp://docker-proxy:2375`); when unset, the local Docker socket is used |
 | `DOCKER_GID`                  | No       | Docker Compose only: the group that owns the Docker socket, which the socket proxy runs as. Default `0`, right for Docker Desktop; on Linux it's usually the `docker` group (`getent group docker \| cut -d: -f3`) |
 | `OpenTelemetry__OtlpEndpoint` | No       | OpenTelemetry collector endpoint                                                          |
@@ -113,6 +114,7 @@ setting you kept there for it (such as `PIA_CONTAINER_NAME`, `ASPNETCORE_ENVIRON
 | browserless-vpn | site-checker-browserless-vpn | (see vpn) | VPN-routed headless Chrome        |
 | vpn             | site-checker-vpn             | 3001      | WireGuard VPN client (PIA)        |
 | docker-proxy    | site-checker-docker-proxy    | (none)    | Allowlisting Docker socket proxy  |
+| scrape-worker   | site-checker-scrape-worker   | (none)    | Runs every scrape and script      |
 
 Each container gets only the settings it reads from `.env`, so the app's secrets stay out of
 third-party images. To pass the vpn container other
