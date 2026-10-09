@@ -33,6 +33,7 @@ public sealed class ScraperServiceTests : IDisposable
     private readonly IResponse _response = Substitute.For<IResponse>();
     private readonly ManualResetEventSlim _releaseBlockedExecutors = new();
     private readonly ScriptCache _scriptCache = new(Substitute.For<IScriptCompiler>());
+    private readonly IAbandonedRunMonitor _abandonedRuns = Substitute.For<IAbandonedRunMonitor>();
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -75,6 +76,7 @@ public sealed class ScraperServiceTests : IDisposable
         [new FakeExecutor(execute)],
         _scriptCache,
         new ScrapeTimeouts(new ConfigurationBuilder().Build(), NullLogger<ScrapeTimeouts>.Instance),
+        _abandonedRuns,
         TimeProvider.System,
         NullLogger<ScraperService>.Instance);
 
@@ -255,6 +257,17 @@ public sealed class ScraperServiceTests : IDisposable
         var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
 
         AssertTimedOut(result);
+        _abandonedRuns.Received(1).Track(Arg.Any<Task>(), Arg.Is<ScrapeRequest>(r => r.SiteCheckId == 7));
+    }
+
+    [TestMethod]
+    public async Task RunThatEndsInTime_IsNotTrackedAsAbandoned()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));
+
+        await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        _abandonedRuns.DidNotReceiveWithAnyArgs().Track(default!, default!);
     }
 
     [TestMethod]

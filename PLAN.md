@@ -53,7 +53,9 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
   - Deviation: the captured logs are `ScrapeResult.Logs` (`ScraperLogEntry`, `ScraperLog`), not `ScriptLogs`: the pipeline creates the log and hands it to every executor through `ExecutorContext.Log`, so it isn't Script-specific, and the pipeline attaches it to every result, including timeouts and scripts that throw. Debug and above are recorded; Trace is only passed on.
   - The failure dumps' `.log` now includes the Scraper log, and the runner writes the dumps after releasing the scrape lock.
   - `CLAUDE.md`'s pipeline bullet was rewritten here, since it described the pipeline writing dumps.
-- [ ] 5. Abandoned runs
+- [x] 5. Abandoned runs
+  - Deviation: `ExitingAbandonedRunMonitor` takes `stopApplication` and `failFast` callbacks instead of `IHostApplicationLifetime`, so `src/Scraper` gains no hosting dependency; the worker wires them up. Both monitors expose `HasAbandonedRuns`, on the interface.
+  - `Scraper.UnitTests` gains `Microsoft.Extensions.TimeProvider.Testing` (lock file updated).
 - [ ] 6. The Scrape Worker
 - [ ] 7. RemoteScraperService
 - [ ] 8. Worker container and networks
