@@ -56,7 +56,12 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
 - [x] 5. Abandoned runs
   - Deviation: `ExitingAbandonedRunMonitor` takes `stopApplication` and `failFast` callbacks instead of `IHostApplicationLifetime`, so `src/Scraper` gains no hosting dependency; the worker wires them up. Both monitors expose `HasAbandonedRuns`, on the interface.
   - `Scraper.UnitTests` gains `Microsoft.Extensions.TimeProvider.Testing` (lock file updated).
-- [ ] 6. The Scrape Worker
+- [x] 6. The Scrape Worker
+  - Deviation: the worker logs to the console only; `OpenTelemetryExtensions` stays in Backend. On its internal network the worker couldn't reach a collector anyway, and Scraper logs reach the app's OpenTelemetry pipeline through `ScrapeResult.Logs`.
+  - Service registration is in `ScrapeWorkerServices` and the endpoints in `ScrapeWorkerEndpoints` (two `extension` blocks in one class trip CA1708). It loads `.env` like the app, for local runs, and listens on `http://localhost:5280` from `launchSettings.json`.
+  - When the exiting monitor stops the worker, it sets exit code 1 first.
+  - Gotcha: in the test project, `WebApplicationFactory<Program>` resolved to `Microsoft.Playwright.Program`, because `using` directives inside the namespace win over the enclosing namespace. Use `SiteChecker.ScrapeWorker.Program`.
+  - Smoke-tested `dotnet run --project src/ScrapeWorker`: `/healthz` is Healthy and `DELETE /scripts/1` is 204.
 - [ ] 7. RemoteScraperService
 - [ ] 8. Worker container and networks
 - [ ] 9. ADR, docs and end-to-end check
