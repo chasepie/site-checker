@@ -1,0 +1,258 @@
+# Plan: Script isolation and hardening
+
+## Context
+
+Script Scrapers run unsandboxed inside the app (ADR 0004). The app has no authentication, holds every secret, owns the SQLite database and mounts the Docker socket. So anyone who can reach the app, or get a browser on the LAN to send it requests (DNS rebinding, since `AllowedHosts` is `*`), can run code that controls the host.
+
+This work moves scripts into a **Scrape Worker** container that has no secrets, no database, no Docker access and no direct internet access. It also hardens everything around the worker:
+- the app accepts only known Host headers
+- an admin token gates script uploads and Test Runs
+- the app reaches Docker only through an allowlisting socket proxy that permits only "inspect and restart the two VPN containers"
+- each container gets only the env vars it reads
+- the app container runs non-root on a read-only filesystem
+
+A worker that is stuck in a synchronous loop exits so Docker restarts it, which removes ADR 0004's leaked-thread consequence.
+
+## Working across sessions
+
+- **First action:**
+  1. You commit the 13 pending stage 1 changes on `scraper-architecture-stage-1`.
+  2. Then create `script-isolation` from that branch.
+  3. Copy this plan to `PLAN.md` at the repo root and commit it ("Add script isolation working plan").
+- **Each session** starts by reading `PLAN.md` and `git log scraper-architecture-stage-1..HEAD`, then continues with the first unchecked phase.
+- **After each phase commit,** tick its box, add a line about anything that deviated from the plan, and commit `PLAN.md` with that phase.
+- **When stage 1 merges,** rebase onto `main` (`git rebase --onto main scraper-architecture-stage-1`) and retarget the PR.
+- **Before merge,** the last commit deletes `PLAN.md`.
+
+### Progress
+- [ ] 1. Host filtering and the admin token
+- [ ] 2. VPN without container creation
+- [ ] 3. Docker socket proxy, env split and app container hardening
+- [ ] 4. A serializable scrape contract
+- [ ] 5. Abandoned runs
+- [ ] 6. The Scrape Worker
+- [ ] 7. RemoteScraperService
+- [ ] 8. Worker container and networks
+- [ ] 9. ADR, docs and end-to-end check
+- [ ] Remove `PLAN.md`, then open the PR
+
+## Decisions
+
+**From you:**
+- **Branching:** stacked on `scraper-architecture-stage-1` and rebased when it merges. One PR, one commit per phase, and every commit builds in Release and passes `dotnet test`.
+- **Local dev:** when `SCRAPE_WORKER_URL` is unset, the app runs `ScraperService` in-process as it does today, and logs a startup warning if that happens inside a container.
+- **Stuck scripts:** the worker is long-lived and keeps the compile cache. When an abandoned run hasn't ended within a grace period after its timeout, the worker exits and Docker restarts it.
+- **Scope:** the worker, plus host filtering, the admin token, the Docker socket proxy, the env split and app container hardening.
+
+**My calls (push back if any is wrong):**
+- **The worker is an ASP.NET minimal API, not controllers.** Its endpoints are internal, and keeping them out of `SiteChecker.Backend.Controllers` keeps them out of `model.ts`.
+- **The app keeps compiling scripts for validation** (`SiteValidator` → `IScriptCompiler.Validate`). Compiling never runs the script, so it's safe, and it keeps compile errors on save synchronous.
+- **The app keeps choosing the browser.** `GetBrowserType` is pure config, and the runner needs it before scraping, to rotate the VPN under the scrape lock. It moves into a small `BrowserSelector` that both sides use. Only the worker gets `BROWSERLESS_TOKEN`.
+- **Failure dumps are written by the app, not the worker.** The pipeline returns the page HTML (`ScrapeResult.PageHtml`), and `SiteCheckRunner.RecordOutcomeAsync` writes the dumps alongside the screenshot. The worker needs no volumes.
+- **`ScrapeResult.Exception` becomes strings** (`ExceptionType` and `ExceptionDetail`), the same in-process and remote. An `Exception` doesn't serialize, and only the exception-type metadata, the dumps and the logs use it.
+- **Script logs travel back with the result.** The worker captures the script's log entries (capped at 200 entries or 64 KB) in `ScrapeResult.ScriptLogs`, and the app re-logs them under `SiteChecker.Script` with today's scope. That way they still reach the app's OpenTelemetry pipeline even though the worker has no egress. Showing them in the Test Run UI is out of scope.
+- **The admin token:**
+  - It's set with `ADMIN_TOKEN`.
+  - It gates `SiteController`'s create, update and test-run actions: everything that uploads or runs a script. Reads, deletes, Site Checks and the VPN API stay open.
+  - It's required in Production, so startup fails without it, and optional in Development (gate off when unset).
+  - Checked with `CryptographicOperations.FixedTimeEquals`.
+  - The frontend keeps it in `localStorage`, sends it as `Authorization: Bearer`, and asks for it in a dialog on a 401.
+- **`ALLOWED_HOSTS`:**
+  - A semicolon-separated list that becomes `AllowedHosts`.
+  - `localhost` is always added, so the container healthcheck keeps working.
+  - It's required in Production, so startup fails while it's unset or `*`.
+- **Docker access goes through `wollomatic/socket-proxy`, not a custom sidecar.** Once the throwaway container is gone (phase 2), all the app needs is:
+  - `GET /containers/{name}/json` for the Browserless VPN container
+  - `POST /containers/{name}/restart` for the two VPN containers
+
+  Both are addressed **by name**. Addressing by ID would make the allowlist cover every container.
+- **The PIA location list comes from `https://serverlist.piaservers.net/vpninfo/servers/v6`.** The first line of the response is JSON, and we keep the regions whose `servers.wg` is present. That's exactly what `wg-gen.sh -a` does, and it needs no credentials. The signature isn't verified, which matches today, since `-k` isn't passed.
+- **The worker refuses new scrapes while it has an abandoned run.** It answers 503 and reports unhealthy, and the app waits for it to be healthy before each scrape, so a check doesn't land on a worker that's about to exit.
+
+## New and changed projects
+
+| Project | Notes |
+| --- | --- |
+| `src/ScrapeWorker` (new) | `Microsoft.NET.Sdk.Web`, root namespace `SiteChecker.ScrapeWorker`. References `Scraper`. Minimal API, console logging (plus OTLP when configured). |
+| `src/Scraper` | Gains `ScrapeJson` (the shared `JsonSerializerOptions`), `BrowserSelector`, `IAbandonedRunMonitor`, and the serializable `ScrapeResult` fields. |
+| `src/Backend` | Gains `RemoteScraperService`, admin token auth, host filtering, `PiaServerList`. Loses `Docker.DotNet`'s container create/logs usage. |
+| `test/ScrapeWorker.IntegrationTests` (new) | `WebApplicationFactory` over the worker with a fake `IBrowserProvider` and real script compilation. |
+
+Add both new projects to `SiteChecker.slnx`, and commit every new `packages.lock.json`.
+
+## Phases
+
+### 1. Host filtering and the admin token
+**Backend:**
+- Read `ALLOWED_HOSTS` and fold it into `AllowedHosts` with `localhost` added. Fail startup in Production when it's unset or `*`.
+- `AdminTokenAuthenticationHandler`, a bearer scheme compared against `ADMIN_TOKEN` in constant time, plus an `Admin` policy.
+- `[Authorize(Policy = "Admin")]` on `CreateSite`, `UpdateSite` and `StartTestRun`. Add `app.UseAuthentication()` before `UseAuthorization()`.
+- In Production, startup fails without `ADMIN_TOKEN`. In Development, the policy allows everyone when it's unset, and logs that once.
+
+**Frontend:**
+- An `adminTokenInterceptor` next to `auth.interceptor.ts` adds the header when a token is stored.
+- A 401 opens a small token dialog, stores the token and retries the request once.
+
+**Tests:**
+- In `SiteApiTests`, `SiteApiFactory` sets a token, and a test client without the header gets 401 on each gated action and 200 on the open ones.
+- A wrong `Host` header gets 400.
+- Production startup fails without `ADMIN_TOKEN` or `ALLOWED_HOSTS`.
+
+**Docs:** add both variables to `docs/configuration.md` and `example.env`.
+
+### 2. VPN without container creation
+- `PiaServerList` (a typed `HttpClient`) fetches and parses the server list into `PiaLocation`s, then applies the US filter and shuffle. `DockerPiaContainers.ListLocationsAsync` delegates to it, or it moves out of `IPiaContainers` entirely, whichever reads better once it's done.
+- `IsVpnRunningAsync` inspects the container by name, and `SetLocationAndRestartAsync` restarts by name. Delete `GetContainerAsync` and the container listing.
+- `DockerPiaContainers` builds its client from `DOCKER_HOST` when set (e.g. `tcp://docker-proxy:2375`), and from the default socket otherwise.
+- **Tests (`Backend.UnitTests`, with a fake HTTP handler like `PushoverChannelTests`):** parsing a captured server-list fixture (JSON line plus signature), regions without WireGuard, and a non-200 response.
+
+### 3. Docker socket proxy, env split and app container hardening
+**`docker-compose.yml`:**
+- A `docker-proxy` service (`wollomatic/socket-proxy`, pinned version) on a new `docker` network with `internal: true`:
+  - `-listenip=0.0.0.0`, `-allowfrom=site-checker`
+  - `-allowGET=/v1\.[0-9]+/containers/site-checker-browserless-vpn/json`
+  - `-allowPOST=/v1\.[0-9]+/containers/site-checker-(vpn|browserless-vpn)/restart`
+  - `-watchdoginterval=3600 -stoponwatchdog`
+  - `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, `mem_limit: 64M`
+- **App:**
+  - Drop the socket mount. Set `DOCKER_HOST=tcp://docker-proxy:2375` and join the `docker` network.
+  - Replace `env_file: .env` with an explicit `environment:` list of the variables the app reads (interpolated from `.env`). PIA credentials and `BROWSERLESS_TOKEN` (until phase 8, which moves it to the worker) stay off the app.
+  - `vpn` gets `USER`/`PASS`/`LOCAL_NETWORK` explicitly instead of the whole `.env`.
+- **App hardening:**
+  - Set `USER $APP_UID` in the Dockerfile's final stage.
+  - In Compose: `read_only: true`, a `tmpfs` at `/tmp`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`.
+  - Data, logs and `/pia` stay writable bind mounts.
+
+**Verify (manual, recorded in the Progress notes):**
+- `docker compose up` on a clean checkout.
+- VPN rotation works through the proxy.
+- `curl` from inside the app container can't list or create containers.
+- Optional notifier variables passed as empty strings still read as "not configured". If they don't, use `${VAR:-}` and treat empty as unset.
+
+**Docs (`docs/configuration.md`):** an upgrade note for the bind mounts. Host directories must be writable by UID 1654, the image's `app` user (`chown -R 1654 site-checker/`), or set `user:` to your own UID.
+
+**Risk:** on Docker Desktop (macOS) the proxy's documented non-root `user: "65534:<docker gid>"` may not get access to the socket. If so, run it as root locally and note the difference in `docs/local-development.md`.
+
+### 4. A serializable scrape contract
+All in `src/Scraper`, still in-process, with no behavior change.
+
+**`ScrapeResult`:**
+- Replace `Exception` with `ExceptionType` and `ExceptionDetail` (strings), filled by `ScrapeResult.Unexpected(Exception)`.
+- Add `PageHtml`. The pipeline captures it under the artifact budget for a Site Check's Unexpected Failure.
+- Add `ScriptLogs`, a list of `ScriptLogEntry(Level, Message, Exception?)`.
+
+**Pipeline and serialization:**
+- `ScraperSpec`: `[JsonPolymorphic]`, with `[JsonDerivedType(typeof(ScriptSpec), "script")]`.
+- `ScrapeJson.Options`: string enums, `Uri`, and polymorphism. A round-trip test covers each outcome.
+- `FailureArtifacts.WriteAsync(ScrapeRequest, ScrapeResult)` no longer takes a page. `ScraperService` stops calling it, and `SiteCheckRunner.RecordOutcomeAsync` calls it.
+- `ScriptExecutor` gives the script a logger that both forwards to the real logger and records into `ScriptLogs`, with the cap.
+
+**`IScraperService`:**
+- Gains `EvictScriptAsync(int siteId, CancellationToken)`. `SiteController` calls it instead of `ScriptCache.Evict`, and the in-process implementation calls the cache.
+- `GetBrowserType` moves to `BrowserSelector`. `IScraperService` drops it, and the runner and `RunTestAsync` use the selector.
+
+**Elsewhere:**
+- `SiteCheckExtensions.Update` reads `ExceptionType`.
+- Fix `TestRunResult.From` and the fakes (`FakeScraperService`, `RunnerHarness`).
+
+**Tests:**
+- Update `ScraperServiceTests` (the dump assertions move to a runner test), `ScriptExecutorTests` (log capture and cap) and `ScrapeResult` round trips.
+
+### 5. Abandoned runs
+- `IAbandonedRunMonitor.Track(Task run, ScrapeRequest request)` is called by `ScraperService` where `ObserveAbandoned` is today.
+- The default `LoggingAbandonedRunMonitor` keeps today's behavior: it logs when the run ends. It's registered by `AddScraperServices()` with `TryAdd`, so the worker can replace it.
+- `ExitingAbandonedRunMonitor` lives in `src/Scraper` so it's testable without the worker:
+  - It reports `HasAbandonedRuns` while one is pending.
+  - If a run hasn't ended within `AbandonedRunGrace` (15 s, on `TimeProvider`), it logs Critical and calls `IHostApplicationLifetime.StopApplication()`.
+  - It arms `Environment.FailFast` as a backstop 10 s later. The backstop is behind an injectable `Action`, so tests don't kill the test host.
+- **Tests (`Scraper.UnitTests`, `FakeTimeProvider`):**
+  - a run ending within the grace period doesn't stop the app
+  - a run that doesn't end does stop it
+  - the backstop fires if stopping hangs
+
+### 6. The Scrape Worker
+`src/ScrapeWorker/Program.cs`:
+- Registers `AddScraperServices()` and replaces the monitor with the exiting one.
+- **`POST /scrape`:** takes a `ScrapeRequest` and returns a `ScrapeResult`, using `ScrapeJson.Options` and `HttpContext.RequestAborted`. It returns 503 while `HasAbandonedRuns`.
+- **`DELETE /scripts/{siteId}`:** evicts that Site's script from the cache.
+- **`GET /healthz`:** unhealthy while `HasAbandonedRuns`.
+- Startup validation is the same as the app's `ValidateScraperServices`: timeouts plus compiler references.
+- Logging: the console, plus OTLP if `OpenTelemetry:OtlpEndpoint` is set. Move `OpenTelemetryExtensions` from Backend to `Utilities` (or a shared hosting project, if that's cleaner) so both hosts use it.
+
+**Tests (`test/ScrapeWorker.IntegrationTests`, with `WebApplicationFactory<SiteChecker.ScrapeWorker.Program>`, a fake `IBrowserProvider` and page, and real compilation of a small script):**
+- success
+- Known Failure with Requested Actions
+- compile errors returning `Diagnostics`
+- timeout
+- 503 and an unhealthy health check while a run is abandoned
+- eviction
+
+### 7. RemoteScraperService
+`RemoteScraperService : IScraperService` in Backend:
+- A typed `HttpClient` with `BaseAddress = SCRAPE_WORKER_URL`.
+- **Before each scrape:** poll `/healthz` until healthy, for up to 120 s (enough for a restart after an abandoned run). If it never becomes healthy, return the Unexpected Failure "The Scrape Worker isn't available".
+- **The scrape call:** its timeout is the resolved Site timeout plus `ArtifactBudget` plus 25 s for closing the browser and transfer.
+  - A timeout, a dropped connection or a 5xx becomes an Unexpected Failure ("The Scrape Worker stopped responding").
+  - Cancelling the token aborts the request.
+  - It never throws except `OperationCanceledException`, like the in-process contract.
+- Re-logs `ScriptLogs` under `SiteChecker.Script` with the Site and Site Check scope.
+- `EvictScriptAsync` is best effort: it logs a failure and doesn't throw.
+- `AddScraperServices()` stays as-is. Backend's `Program` registers `RemoteScraperService` over it when `SCRAPE_WORKER_URL` is set. Otherwise it warns when `EnvironmentUtils.IsDockerContainer()`.
+
+**Tests (`Backend.IntegrationTests`):** `RemoteScraperService` against the real worker from phase 6, through `WebApplicationFactory`'s handler (`CreateDefaultClient`), covering:
+- each outcome round-tripping
+- script logs re-logged
+- worker unavailable, then available
+- worker 503 until healthy
+- the HTTP timeout
+- cancellation
+
+### 8. Worker container and networks
+**Dockerfile:**
+- One build stage, two final stages, `app` and `worker`. Both use `aspnet:10.0` with `USER $APP_UID`.
+- The worker publishes `src/ScrapeWorker`, including the Playwright driver that `Microsoft.Playwright` ships.
+
+**Compose:** a `scrape-worker` service with `build.target: worker`, and `app` with `build.target: app`. Its settings:
+- no volumes, `read_only`, `tmpfs /tmp`, `cap_drop: [ALL]`, `no-new-privileges`
+- `mem_limit: 1g`, `pids_limit: 256`, `cpus: 2`
+- only `BROWSERLESS_URL`, `BROWSERLESS_URL_VPN`, `BROWSERLESS_TOKEN`, `SCRAPE_TIMEOUT` and `BROWSERLESS_TIMEOUT`
+- a healthcheck on `/healthz` and `restart: unless-stopped`
+
+**Networks:**
+
+| Network | Members | Internet |
+| --- | --- | --- |
+| `default` | app, browserless, vpn | yes |
+| `scrape` (`internal: true`) | app, scrape-worker, browserless, vpn | no |
+| `docker` (`internal: true`) | app, docker-proxy | no |
+
+- The app gets `SCRAPE_WORKER_URL=http://scrape-worker:8080` and loses `BROWSERLESS_TOKEN`.
+- `browserless-vpn` shares `vpn`'s network namespace, so it joins `scrape` through `vpn`.
+
+**Verify (manual):**
+- Both demo Sites check successfully, with and without the VPN.
+- A Test Run works.
+- A script with `while (true) { }` times out, the worker restarts, and the next check succeeds.
+- From inside the worker:
+  - there's no route to the internet or the proxy
+  - `env` shows no Pushover, Discord or PIA secrets
+  - `/app/data` doesn't exist
+
+**Risk:** the PIA container's firewall may drop traffic arriving on the second (`scrape`) interface. If it does:
+- check `thrnz/docker-wireguard-pia`'s firewall settings for allowing the Docker network
+- as a fallback, give the worker the `default` network as well, and record the lost egress restriction in the ADR
+
+### 9. ADR, docs and end-to-end check
+- **ADR 0006, "Scripts run in an isolated Scrape Worker":** supersedes 0004. Mark 0004 `Superseded by 0006`. It records:
+  - what's isolated and what isn't (a script can still drive Browserless to reach the LAN and the app's API, which is why the admin token matters)
+  - the exit-on-abandoned-run policy
+  - the in-process development fallback
+- **`CLAUDE.md`:** the project list, Scrapers and Sites (the worker, `RemoteScraperService`, dumps written by the runner), the trust boundary, Configuration, and Testing (the new test project).
+- **`docs/configuration.md`:**
+  - `SCRAPE_WORKER_URL`, `DOCKER_HOST`, `ADMIN_TOKEN`, `ALLOWED_HOSTS`
+  - a rewritten trust boundary section
+  - upgrade steps: chown, the new variables, `docker compose build`
+- **`docs/local-development.md`:** in-process by default; how to run the worker locally (`dotnet run --project src/ScrapeWorker`, set `SCRAPE_WORKER_URL`).
+- **`GLOSSARY.md`:** add **Scrape Worker**.
+- **`example.env`:** the new variables.
+- Final end-to-end pass on the full stack, recorded in Progress.
