@@ -110,16 +110,18 @@ public sealed class TestRunResult
         Outcome = result.Outcome,
         Content = result.Content,
         Message = result.Message,
-        RequestedActions = [.. result.RequestedActions.Select(ToRecorded)],
+        // A value the contract doesn't define is ignored, as a Site Check ignores it, rather than
+        // turning the Test Run's real outcome into an error.
+        RequestedActions = [.. result.RequestedActions.Select(ToRecorded).OfType<RequestedAction>()],
         Diagnostics = [.. result.Diagnostics],
         Screenshot = result.Screenshot,
         DurationMilliseconds = (int)result.Duration.TotalMilliseconds,
     };
 
-    private static RequestedAction ToRecorded(ScriptAction action) => action switch
+    private static RequestedAction? ToRecorded(ScriptAction action) => action switch
     {
         ScriptAction.ChangeVpnLocation => RequestedAction.ChangeVpnLocation,
         ScriptAction.Retry => RequestedAction.Retry,
-        _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
+        _ => null,
     };
 }

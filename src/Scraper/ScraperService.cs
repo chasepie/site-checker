@@ -114,7 +114,9 @@ public sealed class ScraperService(
                 await stopWaiting.CancelAsync();
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (first == run)
+                // A run that threw once the timeout fired (such as a script stopping on its token)
+                // ended because of the timeout, even if it beat the deadline here.
+                if (first == run && (run.IsCompletedSuccessfully || !timeoutCancellation.IsCancellationRequested))
                 {
                     result = await CompletedResultAsync(run);
                 }
@@ -161,7 +163,8 @@ public sealed class ScraperService(
         NavigationResult navigation;
         try
         {
-            navigation = NavigationResult.FromResponse(await page.GotoAsync(request.Site.Url.ToString()));
+            // AbsoluteUri keeps the URL's escaping; ToString() would unescape it.
+            navigation = NavigationResult.FromResponse(await page.GotoAsync(request.Site.Url.AbsoluteUri));
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {

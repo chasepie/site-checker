@@ -6,7 +6,7 @@ namespace SiteChecker.Backend.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class VpnController(
+public sealed class VpnController(
     PiaService piaService,
     SiteCheckRunner runner)
     : ControllerBase

@@ -12,7 +12,7 @@ namespace SiteChecker.Backend.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class SiteController(
+public sealed class SiteController(
     SiteCheckerDbContext dbContext,
     SiteValidator validator,
     ScriptCache scriptCache,

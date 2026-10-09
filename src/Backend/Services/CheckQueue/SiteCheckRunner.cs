@@ -434,6 +434,9 @@ public sealed class SiteCheckRunner : IDisposable
             .FirstAsync(sc => sc.Id == siteCheckId, cancellationToken);
         var site = siteCheck.Site;
 
+        // Before the scrape lock, so a Site with no usable Scraper fails without rotating the VPN.
+        var scraper = ToScraperSpec(site);
+
         BrowserType browserType;
         ScrapeResult result;
         await _scrapeLock.WaitAsync(cancellationToken);
@@ -454,7 +457,7 @@ public sealed class SiteCheckRunner : IDisposable
             {
                 SiteCheckId = siteCheck.Id,
                 Site = new ScrapeSite(site.Id, site.Name, site.Url, site.UseVpn),
-                Scraper = ToScraperSpec(site),
+                Scraper = scraper,
                 BrowserType = browserType,
                 Timeout = site.TimeoutSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
                 AlwaysTakeScreenshot = site.AlwaysTakeScreenshot,
@@ -509,32 +512,31 @@ public sealed class SiteCheckRunner : IDisposable
             carriedOut.Add(RequestedAction.ChangeVpnLocation);
         }
 
+        var retryRequested = requested.Contains(ScriptAction.Retry);
         var queuedRetry = false;
-        if (requested.Contains(ScriptAction.Retry))
+        if (retryRequested)
         {
             // Like any open Site Check, the retry is created under the create lock.
             await _createLock.WaitAsync(cancellationToken);
-            try
+        }
+        try
+        {
+            if (retryRequested && !await RetriedInFailingRunAsync(dbContext, siteCheck, completedDate, cancellationToken))
             {
-                if (!await RetriedInFailingRunAsync(dbContext, siteCheck, completedDate, cancellationToken))
-                {
-                    carriedOut.Add(RequestedAction.Retry);
-                    dbContext.SiteChecks.Add(new SiteCheck(siteCheck.Site, completedDate));
-                    queuedRetry = true;
-                }
-
-                siteCheck.RequestedActions = carriedOut;
-                await dbContext.SaveChangesAsync(cancellationToken);
+                carriedOut.Add(RequestedAction.Retry);
+                dbContext.SiteChecks.Add(new SiteCheck(siteCheck.Site, completedDate));
+                queuedRetry = true;
             }
-            finally
+
+            siteCheck.RequestedActions = carriedOut;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            if (retryRequested)
             {
                 _createLock.Release();
             }
-        }
-        else
-        {
-            siteCheck.RequestedActions = carriedOut;
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
 
         if (failedVpnLocationId != null)

@@ -88,6 +88,21 @@ public sealed class SiteValidatorTests
     }
 
     [TestMethod]
+    [DataRow("example.com")]
+    [DataRow("/relative/path")]
+    [DataRow("ftp://example.com/")]
+    [DataRow("file:///etc/hosts")]
+    public void Url_ThatIsNotAnAbsoluteHttpUrl_IsRejected(string url)
+    {
+        var request = Request(Script());
+        request.Url = new Uri(url, UriKind.RelativeOrAbsolute);
+
+        var result = CreateValidator().ValidateSite(request, existing: null);
+
+        Assert.Contains("http:// or https://", Assert.ContainsSingle(result.Errors));
+    }
+
+    [TestMethod]
     [DataRow(0)]
     [DataRow(51)]
     public void Timeout_ThatDoesNotFitUnderBrowserless_IsRejected(int timeoutSeconds)
