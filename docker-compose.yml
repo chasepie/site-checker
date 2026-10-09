@@ -11,8 +11,10 @@ services:
     # Only what the app reads, so a value it doesn't need (such as the PIA password) never reaches it.
     environment:
       - TZ=America/New_York
-      - ADMIN_TOKEN=${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env (see docs/configuration.md)}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env (see docs/configuration.md)}
+      # Both required: without them the app stops at startup and logs which is missing. Not `:?`,
+      # which would fail every Compose command, even one that starts only the browsers.
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
       - DOCKER_HOST=tcp://docker-proxy:2375
       - SCRAPE_WORKER_URL=http://scrape-worker:8080
       # Only to choose each Site's browser; the worker connects to them.

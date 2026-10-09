@@ -29,7 +29,7 @@ public sealed class AdminToken
             if (!environment.IsDevelopment())
             {
                 throw new InvalidOperationException(
-                    $"{AdminTokenKey} must be set. It's the token the UI asks for before saving a Site or starting a Test Run, because both run code on the host.");
+                    $"{AdminTokenKey} must be set. It's the token the UI asks for before saving a Site or starting a Test Run, since both upload or run a script.");
             }
 
             logger.LogWarning("{Key} isn't set, so anyone who can reach the app can upload and run scripts.", AdminTokenKey);

@@ -18,8 +18,11 @@ dotnet test
 dotnet test --project test/Backend.IntegrationTests/Backend.IntegrationTests.csproj
 dotnet test --project test/Backend.IntegrationTests/Backend.IntegrationTests.csproj --filter "FullyQualifiedName~RunNext"
 
-# Run the backend (needs Browserless containers or local Playwright; see docs/local-development.md)
+# Run the backend (needs Browserless containers or local Playwright; see docs/local-development.md).
+# Without SCRAPE_WORKER_URL it scrapes in-process; to use the worker, run it too and set
+# SCRAPE_WORKER_URL=http://localhost:5280.
 cd src/Backend && dotnet run
+dotnet run --project src/ScrapeWorker
 
 # Frontend (src/Frontend)
 npm install
@@ -47,7 +50,7 @@ Build notes:
 
 ## Architecture
 
-Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VPN, notifiers, code generators), `src/Database` (EF Core models, `SiteCheckerDbContext`, migrations, change interceptor), `src/Scraper` (Playwright scraping library), `src/Utilities`, `src/Frontend` (Angular SPA), and `src/LocalPlaywright` (a local Playwright server for development without Docker). Tests live in `test/`.
+Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VPN, notifiers, code generators), `src/Database` (EF Core models, `SiteCheckerDbContext`, migrations, change interceptor), `src/Scraper` (Playwright scraping library), `src/ScrapeWorker` (the Scrape Worker: a minimal ASP.NET host that runs the scrape pipeline for the app), `src/Utilities`, `src/Frontend` (Angular SPA), and `src/LocalPlaywright` (a local Playwright server for development without Docker). Tests live in `test/`.
 
 ### Site Check lifecycle
 - `Services/CheckQueue/SiteCheckRunner` owns every Site Check status change: deciding which Sites are due by Schedule, accepting requests (`RequestCheckAsync` returns the Site's open check if one exists), claiming and running checks (Queued → Checking → Succeeded/Failed), and re-queuing orphaned `Checking` checks (after a restart or a failed save) each time it looks for work.
@@ -69,7 +72,8 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 - **Sites and their Scrapers are data** (ADR 0003). `Site.Scraper` is a flat `ScraperDefinition` (a `Kind` plus one nullable payload per kind) in a JSON column. Stage 1 has only Script Scrapers: an uploaded C# file whose metadata is in `Scraper.Script` and whose source is in its own `SiteScript` row. `SiteScript` deliberately isn't an `IEntityWithId`, so the save interceptor never broadcasts it.
 - **One pipeline runs every Scraper** (`src/Scraper/ScraperService.cs`). It opens the browser (`Browsers/BrowserProvider`; `Browsers/BrowserSelector` picks the `BrowserType` from config), navigates to `Site.Url`, and passes the navigation result to the `IScrapeExecutor` for the request's `ScraperSpec` type, under the Site's timeout (`ScrapeTimeouts`). Navigation errors reach the Scraper rather than failing the scrape (ADR 0005). The pipeline also takes the screenshot (on failure, or always per Site) and, for a Site Check's Unexpected Failure, the page's HTML, under a separate 10 s budget, and converts every exception into an Unexpected Failure. `ScrapeResult` is Succeeded, a Known Failure (with Requested Actions), or an Unexpected Failure.
 - **The pipeline writes nothing; the result carries everything**, so it can cross a process boundary (`ScrapeJson` is the wire format): the exception as strings (`ExceptionType`, `ExceptionDetail`), `PageHtml`, and the Scraper's own log entries (`ScraperLog`, capped), recorded through `ExecutorContext.Log`. The runner writes the failure dumps (`FailureArtifacts`) from the result. Evict a Site's compiled script through `IScraperService.EvictScriptAsync`, not `ScriptCache`.
-- **Scripts** compile against the `SiteChecker.Scripting` contract (`src/Scripting`: `IScript`, `ScriptContext`, `ScriptOutcome`, `RequestedAction`) with `ScriptCompiler` (Roslyn, fixed global usings, into a collectible load context), cached per Site by source hash in `ScriptCache` (ADR 0004). The runtime compiler is the source of truth: `samples/DemoScrapers` mirrors its settings, and `Scraper.IntegrationTests` compiles every demo script with it.
+- **Scripts run in the Scrape Worker** (ADR 0006). With `SCRAPE_WORKER_URL` set (Docker Compose sets it), the app's `IScraperService` is `Services/Scraping/RemoteScraperService`, which waits for the worker's `/healthz`, posts the `ScrapeRequest` to `/scrape`, and turns every failure to reach it into an Unexpected Failure. It re-logs the result's Scraper log under `SiteChecker.Script`. Without it, the app runs `ScraperService` in-process (local development). The app keeps choosing the browser (`BrowserSelector`) and validating scripts (`IScriptCompiler.Validate` compiles without running). In the worker, `ExitingAbandonedRunMonitor` stops the process when a run abandoned at its timeout is still going 15 s later, so Docker restarts it; until then `/scrape` answers 503 and `/healthz` is unhealthy.
+- **Scripts** compile against the `SiteChecker.Scripting` contract (`src/Scripting`: `IScript`, `ScriptContext`, `ScriptOutcome`, `RequestedAction`) with `ScriptCompiler` (Roslyn, fixed global usings, into a collectible load context), cached per Site by source hash in `ScriptCache`. The runtime compiler is the source of truth: `samples/DemoScrapers` mirrors its settings, and `Scraper.IntegrationTests` compiles every demo script with it.
 - `DemoDataSeeder` seeds the two demo Sites (scripts embedded from `samples/DemoScrapers`) only into a database with no Sites, when `SEED_DEMO_DATA` is on (default: Development only). It never updates or deletes.
 
 ### Type bridge (C# → TypeScript)
@@ -96,12 +100,14 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 - Use MSTest v4 only (no xUnit, NUnit, or Jest). The MSTest analyzers run in `Recommended` mode with warnings as errors, so use the specific asserts (`Assert.HasCount`, `Assert.ContainsSingle`, `Assert.IsEmpty`) and pass `TestContext.CancellationToken`.
 - Test projects are split by category, and the name says which: `*.UnitTests` (fast, no database or Roslyn) and `*.IntegrationTests` (real SQLite, real compilation). Both run in CI.
 - `test/Backend.IntegrationTests` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` (in `test/Backend.UnitTests`) cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF. `harness.Vpn` fakes the VPN containers under the real `PiaService`.
-- API tests use `SiteApiFactory` (`WebApplicationFactory<Program>`): the real app over in-memory SQLite, with demo data off, the app's background services removed, and a fake `IScraperService`.
+- API tests use `SiteApiFactory` (`WebApplicationFactory<Program>`): the real app over in-memory SQLite, with demo data off, the app's background services removed, and a fake `IScraperService`. It requires an admin token, which its clients send; clear `Authorization` to test a gated action.
+- `test/ScrapeWorker.IntegrationTests` covers the worker's API through `WebApplicationFactory<SiteChecker.ScrapeWorker.Program>` (qualify it: a bare `Program` resolves to `Microsoft.Playwright.Program`) with a substituted browser and real compilation. `RemoteScraperService` is tested against a fake worker in `Backend.UnitTests` and against the real one in `Backend.IntegrationTests`.
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.
 - `SCRAPE_TIMEOUT` (seconds, default 120) is the default Site timeout. `BROWSERLESS_TIMEOUT` (ms, default 180000) is passed to Browserless as `TIMEOUT` too, and every timeout must leave 10 s under it (`ScrapeTimeouts`; startup fails otherwise). `SEED_DEMO_DATA` turns the demo Sites on or off (default: Development only).
-- **Trust boundary** (ADR 0004): scripts run unsandboxed in the app, which has no authentication and mounts the Docker socket. Anyone who can reach the app can run code on the host, so it must stay on trusted networks. Don't add features that assume otherwise.
+- `ADMIN_TOKEN` gates saving a Site and starting a Test Run (`[Authorize(Policy = AdminToken.PolicyName)]`; the frontend's `adminTokenInterceptor` sends it and asks for it on a 401). `ALLOWED_HOSTS` restricts Host headers. Both are required outside Development. `SCRAPE_WORKER_URL` points the app at the Scrape Worker, and `DOCKER_HOST` at the socket proxy.
+- **Trust boundary** (ADR 0006): scripts run unsandboxed, but in the Scrape Worker, which has no secrets except the Browserless token, no volumes, no Docker access and no route out except through the browsers. The app reaches Docker only through the socket proxy in `docker-compose.yml`, whose allowlist must cover any new Docker call. Compose passes each container only the variables it reads. A script can still drive a browser to the app's open API endpoints, so keep anything that uploads or runs code behind the admin token, and keep the app on trusted networks.
 
 ## Microsoft documentation
 

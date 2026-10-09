@@ -7,7 +7,7 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 | Variable                      | Required | Description                                                                               |
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `BROWSERLESS_TOKEN`           | Yes      | Authentication token for Browserless (any value works when self-hosting)                  |
-| `ADMIN_TOKEN`                 | Yes      | The token the UI asks for before saving a Site or starting a Test Run, since both run code on the host. Use a long random value (`openssl rand -hex 32`). Required outside Development; when it's unset in Development, anyone can save Sites and start Test Runs |
+| `ADMIN_TOKEN`                 | Yes      | The token the UI asks for before saving a Site or starting a Test Run, since both upload or run a script. Use a long random value (`openssl rand -hex 32`). Required outside Development; when it's unset in Development, anyone can save Sites and start Test Runs |
 | `ALLOWED_HOSTS`               | Yes      | The host names the app is reached by, separated by semicolons, such as `sitechecker.lan;sitechecker.tailnet.ts.net`. Requests with any other `Host` header are rejected, so a web page can't reach the app by pointing its own domain at the app's address (DNS rebinding). `localhost` is always allowed. Required outside Development, and can't be `*` |
 | `PIA_USERNAME`                | Yes      | Private Internet Access VPN username                                                      |
 | `PIA_PASSWORD`                | Yes      | Private Internet Access VPN password                                                      |
@@ -30,20 +30,28 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 
 ## Trust boundary
 
-**Anyone who can reach Site Checker can run code on its host.** The app has no authentication, and
-saving a Site or starting a Test Run accepts C# source that runs inside the app, unsandboxed (see
-[ADR 0004](adr/0004-scripts-run-in-process-behind-a-trust-boundary.md)). A script can read the database
-file and the app's environment variables. The app reaches Docker only through a socket proxy that
-allows inspecting the Browserless VPN container and restarting the two VPN containers, so a script
-can't start containers, but it can restart those two.
+Saving a Site or starting a Test Run uploads C# source that runs unsandboxed. With Docker Compose it
+runs in the **Scrape Worker** container, not in the app (see
+[ADR 0006](adr/0006-scripts-run-in-an-isolated-scrape-worker.md)). The worker has no secrets but the
+Browserless token, no volumes, no access to Docker, and no route to the internet except through the
+browsers. So a script can't read the database, the notification tokens or the PIA credentials, and
+can't start containers.
 
-The admin token (`ADMIN_TOKEN`) is needed to save a Site or start a Test Run, and `ALLOWED_HOSTS`
-stops web pages from reaching the app through DNS rebinding. Both narrow who can upload a script,
-but anyone with the token still runs code on the host.
+What's still exposed:
 
-Only make the app reachable from networks where everyone is trusted, such as your home LAN or a
-private VPN like Tailscale. Never expose it to the internet, even through a reverse proxy, unless the
-proxy requires a login.
+- **The admin token is the key to running code.** Anyone with `ADMIN_TOKEN` can run code in the
+  worker. Use a long random value, and treat it like a password.
+- **The app has no login.** Anyone who can reach it can read Sites and Site Checks, queue checks,
+  delete Sites and change the VPN Location. So can a script, by pointing a browser at the app.
+- **The browsers can reach your LAN.** A script drives Browserless, which can load any address the
+  Docker host can.
+- **Without `SCRAPE_WORKER_URL`, scripts run inside the app**, with its secrets and database. That's
+  meant for local development; the app warns at startup if it happens in a container.
+
+`ALLOWED_HOSTS` stops web pages from reaching the app through DNS rebinding. Even so, only make the
+app reachable from networks where everyone is trusted, such as your home LAN or a private VPN like
+Tailscale. Never expose it to the internet, even through a reverse proxy, unless the proxy requires a
+login.
 
 ## Upgrading to Sites as data
 
@@ -59,7 +67,8 @@ The app container now runs as the image's non-root user (UID 1654) on a read-onl
 Docker through a socket proxy, and only receives the environment variables it reads. Before upgrading
 an existing deployment:
 
-1. Add `ADMIN_TOKEN` and `ALLOWED_HOSTS` to `.env`. Docker Compose refuses to start without them.
+1. Add `ADMIN_TOKEN` and `ALLOWED_HOSTS` to `.env`. Without them the app stops at startup, and its
+   log (`docker compose logs app`) says which is missing.
 2. Make the bind-mounted directories writable by UID 1654: `sudo chown -R 1654 site-checker/`.
    Docker Desktop doesn't need this.
 3. On Linux, set `DOCKER_GID` in `.env` to the Docker socket's group, so the socket proxy can reach it.
