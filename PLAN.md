@@ -69,7 +69,16 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
   - Verified for real: published app (Production, `SCRAPE_WORKER_URL` set) and the worker as separate processes, with the worker on the already-running local Playwright server (`USE_LOCAL_BROWSER`).
     - A queued check of the Bot Detection demo Site ran through the worker against the live page and was recorded Succeeded ("Test Results:Robot").
     - A Site whose script throws was recorded as an Unexpected Failure with `EXCEPTION_TYPE` in its metadata. The app wrote `{check}_{site}.log` (with the script's stack trace at `Throwing.cs:line 6` and the Scraper log) and `.html`, and re-logged the script's entry under `SiteChecker.Script`.
-- [ ] 8. Worker container and networks
+- [x] 8. Worker container and networks
+  - The Dockerfile has a shared `runtime` stage (curl, `USER $APP_UID`, healthcheck) and two targets, `worker` and `app`. `app` is last, so a plain `docker build` still produces the app.
+  - Resolved risk: `thrnz/docker-wireguard-pia`'s firewall loops over every interface present at startup and accepts each one's own subnet, so the VPN container on both `default` and `scrape` accepts the worker. Checked in its `run` script; the real VPN wasn't run (no PIA credentials here).
+  - Verified with `docker compose up` (real Browserless; VPN containers as stand-ins; scratch volumes; `SEED_DEMO_DATA=true`):
+    - a Bot Detection check ran through the worker and real Browserless and Succeeded
+    - inside the worker: UID 1654, read-only root, no `/app/data`, and only `BROWSERLESS_TOKEN` among the secrets (fake `PUSHOVER_TOKEN`, PIA and admin values set for the run didn't reach it)
+    - the worker has no route to example.com and can't resolve `docker-proxy`; it reaches Browserless and `vpn`
+    - it can read the app's API, and a gated write gets 401
+    - a `while (true) { }` script with a 3 s timeout failed "Timed out after 3 s.", and the worker logged Critical 15 s later and stopped. Docker restarted it (RestartCount 1), the app logged "Waiting for the Scrape Worker to report healthy", and the next queued check Succeeded, 22 s after both were queued.
+  - Found, not fixed: a `DISCORD_TOKEN` that isn't a valid bot token makes NetCord fail host startup. On the way down, `SiteCheckTimer` then hit an `ObjectDisposedException` on the runner's create lock (`SiteCheckRunner.cs:161`), a shutdown race that predates this work.
 - [ ] 9. ADR, docs and end-to-end check
 - [ ] Remove `PLAN.md`, then open the PR
 

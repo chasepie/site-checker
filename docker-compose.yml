@@ -4,6 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: app
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -13,10 +14,12 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env (see docs/configuration.md)}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env (see docs/configuration.md)}
       - DOCKER_HOST=tcp://docker-proxy:2375
+      - SCRAPE_WORKER_URL=http://scrape-worker:8080
+      # Only to choose each Site's browser; the worker connects to them.
       - BROWSERLESS_URL=ws://browserless:3000
       - BROWSERLESS_URL_VPN=ws://vpn:3000
-      - BROWSERLESS_TOKEN=${BROWSERLESS_TOKEN}
-      # Read by the app and passed to both Browserless containers as TIMEOUT, so they can't drift.
+      # Read by the app and the worker, and passed to both Browserless containers as TIMEOUT, so
+      # they can't drift.
       - BROWSERLESS_TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
       - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-}
       - VPN_CHANGE_INTERVAL=10
@@ -40,11 +43,43 @@ services:
       - no-new-privileges:true
     networks:
       - default
+      - scrape
       - docker
+    depends_on:
+      - scrape-worker
+      - docker-proxy
+
+  # Runs every scrape, so uploaded scripts run here rather than in the app: no secrets but the
+  # Browserless token, no volumes, no Docker access, and no route out except through the browsers.
+  scrape-worker:
+    container_name: site-checker-scrape-worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+      - BROWSERLESS_URL=ws://browserless:3000
+      - BROWSERLESS_URL_VPN=ws://vpn:3000
+      - BROWSERLESS_TOKEN=${BROWSERLESS_TOKEN}
+      - BROWSERLESS_TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
+      - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 256
+    cpus: 2
+    networks:
+      - scrape
     depends_on:
       - browserless
       - browserless-vpn
-      - docker-proxy
 
   # The app's only access to Docker: inspecting the Browserless VPN container and restarting the two
   # VPN containers, by name. Everything else, such as creating a container, is refused.
@@ -84,6 +119,9 @@ services:
       - TZ=America/New_York
       - TOKEN=${BROWSERLESS_TOKEN}
       - TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
+    networks:
+      - default
+      - scrape
 
   browserless-vpn:
     image: ghcr.io/browserless/chromium:latest
@@ -115,6 +153,11 @@ services:
       - PASS=${PIA_PASSWORD}
       - LOCAL_NETWORK=${LOCAL_NETWORK:-}
       - ACTIVE_HEALTHCHECKS=1
+    # browserless-vpn shares this container's network, so the worker reaches it on scrape. The VPN
+    # firewall accepts each attached network's own subnet.
+    networks:
+      - default
+      - scrape
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv6.conf.default.disable_ipv6=1
@@ -125,6 +168,10 @@ services:
       && LOC=$(cat /pia/loc.txt) /scripts/run"
 
 networks:
+  # The app, the Scrape Worker and the browsers. No route out: the worker reaches the internet only
+  # through the browsers, which are also on default.
+  scrape:
+    internal: true
   # Only the app and the socket proxy, with no route out.
   docker:
     internal: true
