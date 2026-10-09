@@ -106,7 +106,7 @@ public sealed class ScraperServiceTests : IDisposable
 
         Assert.AreEqual(ScrapeOutcome.Succeeded, result.Outcome);
         Assert.AreEqual("content", result.Content);
-        await _page.Received(1).GotoAsync(SiteUrl.ToString(), Arg.Any<PageGotoOptions?>());
+        await _page.Received(1).GotoAsync(SiteUrl.AbsoluteUri, Arg.Any<PageGotoOptions?>());
         Assert.IsTrue(navigatedBeforeExecutor);
         Assert.AreSame(_response, responseSeen);
     }
@@ -227,6 +227,22 @@ public sealed class ScraperServiceTests : IDisposable
 
         AssertTimedOut(result);
         await tokenCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5), Ct);
+    }
+
+    [TestMethod]
+    public async Task Timeout_IsReportedAsATimeout_WhenTheRunStopsOnItsToken()
+    {
+        // A cooperative script throws as soon as its token is cancelled, which can end the run
+        // before the pipeline's own deadline fires.
+        var service = CreateService(async ctx =>
+        {
+            await Task.Delay(Timeout.Infinite, ctx.CancellationToken);
+            return ScrapeResult.Succeeded("unreachable");
+        });
+
+        var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        AssertTimedOut(result);
     }
 
     private void AssertTimedOut(ScrapeResult result)

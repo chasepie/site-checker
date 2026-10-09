@@ -5,7 +5,7 @@ namespace SiteChecker.Backend.Services.VPN;
 /// global (every VPN Site skips an excluded location) and held in memory, so a restart clears them.
 /// Call it through the Site Check Runner when changing location, so a change never overlaps a scrape.
 /// </summary>
-public sealed class PiaService(IPiaContainers containers)
+public sealed class PiaService(IPiaContainers containers) : IDisposable
 {
     /// <summary>
     /// Below this many eligible locations, every exclusion is reset.
@@ -13,6 +13,12 @@ public sealed class PiaService(IPiaContainers containers)
     private const int MinimumEligibleLocations = 5;
 
     private readonly IPiaContainers _containers = containers;
+
+    /// <summary>
+    /// Serializes listing the locations: the VPN controller reads them outside the scrape lock, so
+    /// two callers can ask at once, and a second list would drop the exclusions set on the first.
+    /// </summary>
+    private readonly SemaphoreSlim _listLocationsLock = new(1, 1);
     private List<PiaLocation>? _locations;
 
     /// <summary>
@@ -112,8 +118,23 @@ public sealed class PiaService(IPiaContainers containers)
 
     private async Task<List<PiaLocation>> GetLocationsAsync(CancellationToken cancellationToken)
     {
-        return _locations ??= await _containers.ListLocationsAsync(cancellationToken);
+        if (_locations is { } locations)
+        {
+            return locations;
+        }
+
+        await _listLocationsLock.WaitAsync(cancellationToken);
+        try
+        {
+            return _locations ??= await _containers.ListLocationsAsync(cancellationToken);
+        }
+        finally
+        {
+            _listLocationsLock.Release();
+        }
     }
+
+    public void Dispose() => _listLocationsLock.Dispose();
 }
 
 public static class PiaServiceExtensions

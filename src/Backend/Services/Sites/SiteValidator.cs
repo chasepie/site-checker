@@ -6,9 +6,9 @@ using SiteChecker.Scraper.Scripts;
 namespace SiteChecker.Backend.Services.Sites;
 
 /// <summary>
-/// Checks a Site's settings and Scraper before they're saved or test-run: the Scraper's payload
-/// matches its kind, its script compiles with the runtime compiler, and its timeout fits under
-/// Browserless's.
+/// Checks a Site's settings and Scraper before they're saved or test-run: the URL is an absolute
+/// http(s) URL the pipeline can navigate to, the Scraper's payload matches its kind, its script
+/// compiles with the runtime compiler, and its timeout fits under Browserless's.
 /// </summary>
 public sealed class SiteValidator(IScriptCompiler compiler, ScrapeTimeouts timeouts)
 {
@@ -20,6 +20,7 @@ public sealed class SiteValidator(IScriptCompiler compiler, ScrapeTimeouts timeo
     public SiteValidationResult ValidateSite(SiteRequest request, Site? existing)
     {
         var result = new SiteValidationResult();
+        ValidateUrl(request.Url, result);
         ValidateTimeout(request.TimeoutSeconds, result);
         // Only a Site that already has a script can keep it.
         ValidateScraper(request.Scraper, scriptRequired: existing?.SiteScript is null, result);
@@ -29,9 +30,22 @@ public sealed class SiteValidator(IScriptCompiler compiler, ScrapeTimeouts timeo
     public SiteValidationResult ValidateTestRun(TestRunRequest request)
     {
         var result = new SiteValidationResult();
+        ValidateUrl(request.Url, result);
         ValidateTimeout(request.TimeoutSeconds, result);
         ValidateScraper(request.Scraper, scriptRequired: true, result);
         return result;
+    }
+
+    /// <summary>
+    /// JSON binds a relative URL such as <c>example.com</c> without complaint, but the pipeline can't
+    /// navigate to it, so every check would fail.
+    /// </summary>
+    private static void ValidateUrl(Uri url, SiteValidationResult result)
+    {
+        if (!url.IsAbsoluteUri || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
+        {
+            result.Errors.Add("The URL must be an absolute URL starting with http:// or https://.");
+        }
     }
 
     private void ValidateTimeout(int? timeoutSeconds, SiteValidationResult result)

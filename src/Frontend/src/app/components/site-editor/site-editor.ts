@@ -322,7 +322,8 @@ export class SiteEditor {
     link.href = url;
     link.download = fileName;
     link.click();
-    URL.revokeObjectURL(url);
+    // Revoked once the click has been handled: revoking at once can cancel the download in some browsers.
+    setTimeout(() => { URL.revokeObjectURL(url); });
   }
 
   public async save() {

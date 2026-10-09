@@ -16,7 +16,7 @@ public enum ScraperKind
 /// matches <see cref="Kind"/>. It's flat rather than a class hierarchy because EF Core complex
 /// types don't support inheritance (see <c>docs/adr/0003-scrapers-are-data.md</c>).
 /// </summary>
-public class ScraperDefinition
+public sealed class ScraperDefinition
 {
     public ScraperKind Kind { get; set; } = ScraperKind.Script;
 
@@ -29,7 +29,7 @@ public class ScraperDefinition
 /// <summary>
 /// A Script Scraper's metadata. The source is stored separately, in <see cref="SiteScript"/>.
 /// </summary>
-public class ScriptScraper
+public sealed class ScriptScraper
 {
     /// <summary>
     /// The name of the uploaded <c>.cs</c> file.
@@ -49,7 +49,7 @@ public class ScriptScraper
 /// <see cref="Site"/> so it stays out of Site lists, and it deliberately isn't an
 /// <see cref="IEntityWithId"/>, so the save interceptor never broadcasts it.
 /// </summary>
-public class SiteScript
+public sealed class SiteScript
 {
     public int SiteId { get; set; }
 

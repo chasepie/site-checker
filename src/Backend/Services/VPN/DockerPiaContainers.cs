@@ -77,26 +77,30 @@ public sealed class DockerPiaContainers : IPiaContainers, IDisposable
         };
 
         var container = await _dockerClient.Containers.CreateContainerAsync(createOptions, cancellationToken);
-        await _dockerClient.Containers.StartContainerAsync(container.ID, new(), cancellationToken);
-        var waitResponse = await _dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
-        if (waitResponse.StatusCode != 0)
+        try
         {
-            throw new InvalidOperationException($"Container exited with code {waitResponse.StatusCode}");
-        }
+            await _dockerClient.Containers.StartContainerAsync(container.ID, new(), cancellationToken);
+            var waitResponse = await _dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
+            if (waitResponse.StatusCode != 0)
+            {
+                throw new InvalidOperationException($"Container exited with code {waitResponse.StatusCode}");
+            }
 
-        var logsParameters = new ContainerLogsParameters
-        {
-            ShowStdout = true,
-            ShowStderr = true,
-            Timestamps = false,
-            Follow = false,
-        };
-        List<PiaLocation> locations;
-        using (var logsStream = await _dockerClient.Containers.GetContainerLogsAsync(container.ID, false, logsParameters, cancellationToken))
-        {
+            var logsParameters = new ContainerLogsParameters
+            {
+                ShowStdout = true,
+                ShowStderr = true,
+                Timestamps = false,
+                Follow = false,
+            };
+            using var logsStream = await _dockerClient.Containers.GetContainerLogsAsync(container.ID, false, logsParameters, cancellationToken);
             (string stdout, string stderr) = await logsStream.ReadOutputToEndAsync(cancellationToken);
 
             var jsonStart = stdout.IndexOf('{');
+            if (jsonStart < 0)
+            {
+                throw new JsonException($"No locations in the output: {stdout}");
+            }
             var innerJson = stdout[jsonStart..].Trim()
                 .Replace("}", "},")
                 .Replace("\"port_forward\"", "\"portForward\"")
@@ -104,14 +108,17 @@ public sealed class DockerPiaContainers : IPiaContainers, IDisposable
             var json = '[' + innerJson + ']';
             var allLocations = JsonSerializer.Deserialize<List<PiaLocation>>(json)
                 ?? throw new JsonException($"Failed to deserialize locations: {stdout}");
-            locations = allLocations
+            return allLocations
                 .Where(l => l.Id.StartsWith("us_", StringComparison.Ordinal)
                     || l.Id.StartsWith("us-", StringComparison.Ordinal))
                 .Shuffle()
                 .ToList();
         }
-        await _dockerClient.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters { Force = true }, cancellationToken);
-        return locations;
+        finally
+        {
+            // Also when listing fails, so each failed attempt doesn't leave a stopped container behind.
+            await _dockerClient.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters { Force = true }, CancellationToken.None);
+        }
     }
 
     public async Task<string> ReadCurrentLocationIdAsync(CancellationToken cancellationToken)
