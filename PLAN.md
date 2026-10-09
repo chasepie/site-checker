@@ -62,7 +62,13 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
   - When the exiting monitor stops the worker, it sets exit code 1 first.
   - Gotcha: in the test project, `WebApplicationFactory<Program>` resolved to `Microsoft.Playwright.Program`, because `using` directives inside the namespace win over the enclosing namespace. Use `SiteChecker.ScrapeWorker.Program`.
   - Smoke-tested `dotnet run --project src/ScrapeWorker`: `/healthz` is Healthy and `DELETE /scripts/1` is 204.
-- [ ] 7. RemoteScraperService
+- [x] 7. RemoteScraperService
+  - The waits are in `RemoteScraperOptions` (readiness 120 s, polled every 1 s; response allowance `ArtifactBudget` + 25 s), so tests use short ones. It uses a named `HttpClient` from `IHttpClientFactory` with an infinite client timeout; each call sets its own deadline.
+  - Outcome logging moved to a shared `LogScrapeOutcome` extension, so the app logs the same "Scraped ..." lines for remote scrapes. Re-logged Scraper entries use `ScriptExecutor.LoggerCategory` and the same Site and Site Check scope.
+  - Tests: fake-worker cases in `Backend.UnitTests` (healthy, waits for health, never healthy, dropped connection, 503, no result in time, cancellation, eviction), and real-worker round trips in `Backend.IntegrationTests` (which now references `ScrapeWorker`).
+  - Verified for real: published app (Production, `SCRAPE_WORKER_URL` set) and the worker as separate processes, with the worker on the already-running local Playwright server (`USE_LOCAL_BROWSER`).
+    - A queued check of the Bot Detection demo Site ran through the worker against the live page and was recorded Succeeded ("Test Results:Robot").
+    - A Site whose script throws was recorded as an Unexpected Failure with `EXCEPTION_TYPE` in its metadata. The app wrote `{check}_{site}.log` (with the script's stack trace at `Throwing.cs:line 6` and the Scraper log) and `.html`, and re-logged the script's entry under `SiteChecker.Script`.
 - [ ] 8. Worker container and networks
 - [ ] 9. ADR, docs and end-to-end check
 - [ ] Remove `PLAN.md`, then open the PR

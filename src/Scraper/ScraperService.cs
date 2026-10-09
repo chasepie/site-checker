@@ -76,22 +76,7 @@ public sealed class ScraperService(
         var result = await ScrapeCoreAsync(request, cancellationToken);
         result = result with { Duration = _timeProvider.GetElapsedTime(started) };
 
-        if (result.Outcome == ScrapeOutcome.UnexpectedFailure)
-        {
-            _logger.LogError("Scraping {SiteName} (Site Check {SiteCheckId}) failed: {Message}{ExceptionDetail}",
-                request.Site.Name, request.SiteCheckId, result.Message,
-                result.ExceptionDetail is { } detail ? Environment.NewLine + detail : string.Empty);
-        }
-        else if (result.Outcome == ScrapeOutcome.KnownFailure)
-        {
-            _logger.LogWarning("Scraping {SiteName} (Site Check {SiteCheckId}) found a Known Failure: {Message}",
-                request.Site.Name, request.SiteCheckId, result.Message);
-        }
-        else
-        {
-            _logger.LogInformation("Scraped {SiteName} (Site Check {SiteCheckId}) in {Duration}.",
-                request.Site.Name, request.SiteCheckId, result.Duration);
-        }
+        _logger.LogScrapeOutcome(request, result);
         return result;
     }
 

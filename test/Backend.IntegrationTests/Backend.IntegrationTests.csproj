@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Backend\Backend.csproj" />
+    <ProjectReference Include="..\..\src\ScrapeWorker\ScrapeWorker.csproj" />
   </ItemGroup>
 
   <ItemGroup>
