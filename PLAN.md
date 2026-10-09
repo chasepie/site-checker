@@ -36,7 +36,18 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
   - Deviation: a region whose `servers.wg` is an empty array is skipped. `wg-gen.sh`'s jq treats `[]` as truthy, but such a region can't connect. None exist in today's list (204 regions, all with WireGuard).
   - Container names default to `site-checker-vpn` and `site-checker-browserless-vpn` without the leading `/`, which is still trimmed from configured values.
   - Not yet checked against real containers (none running locally); phase 3's `docker compose up` covers it.
-- [ ] 3. Docker socket proxy, env split and app container hardening
+- [x] 3. Docker socket proxy, env split and app container hardening
+  - Deviation: the proxy runs as `65534:${DOCKER_GID:-0}`. On Docker Desktop the socket is `root:root 660` and the proxy exits with "permission denied" as plain 65534; group 0 fixes it, and Linux sets `DOCKER_GID` to the docker group.
+  - Deviation: the allowlist regexes make the API version prefix optional (`(/v1\.[0-9]+)?`); Docker.DotNet sends `/v1.47/`.
+  - Found and fixed: the final image had no `curl`, so the existing `HEALTHCHECK` never passed. It's installed in the final stage now (phase 8's worker needs a working healthcheck too).
+  - Verified with `docker compose up` plus a scratch override (stand-in alpine containers under the real VPN and Browserless container names, scratch volumes; no `.env` here, so no real PIA VPN):
+    - the app is healthy as UID 1654 on a read-only root, with writable `/tmp` and `/app/data`
+    - no PIA variables in the app's environment
+    - through the proxy, listing containers, creating one, inspecting the VPN container and restarting Browserless all get 403, and inspecting Browserless VPN gets 200
+    - another container can't resolve the proxy
+    - `AllLocations` returns 54 US locations from the live list, and `ChangeLocation` writes `loc.txt` and restarts both VPN containers by name
+  - Checked in `thrnz/docker-wireguard-pia`'s `run`: an empty `LOCAL_NETWORK` is treated as unset (`[ -n ... ]`).
+  - Not checked: the real PIA VPN container with the env split (needs PIA credentials).
 - [ ] 4. A serializable scrape contract
 - [ ] 5. Abandoned runs
 - [ ] 6. The Scrape Worker

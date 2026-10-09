@@ -35,8 +35,15 @@ RUN dotnet publish src/Backend \
 
 
 FROM base AS final
+# The base image has no curl, which the healthcheck needs.
+RUN apt-get -y update \
+  && apt-get -y install --no-install-recommends curl \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+# The image's non-root user. Bind-mounted data, logs and pia directories must be writable by it.
+USER $APP_UID
 
 HEALTHCHECK CMD curl --fail http://localhost:8080/healthz || exit 1
 CMD ["dotnet", "Backend.dll"]
