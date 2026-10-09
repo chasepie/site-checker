@@ -7,26 +7,72 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    env_file:
-      - .env
+    # Only what the app reads, so a value it doesn't need (such as the PIA password) never reaches it.
     environment:
       - TZ=America/New_York
+      - ADMIN_TOKEN=${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env (see docs/configuration.md)}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env (see docs/configuration.md)}
+      - DOCKER_HOST=tcp://docker-proxy:2375
       - BROWSERLESS_URL=ws://browserless:3000
       - BROWSERLESS_URL_VPN=ws://vpn:3000
-      - VPN_CHANGE_INTERVAL=10
+      - BROWSERLESS_TOKEN=${BROWSERLESS_TOKEN}
       # Read by the app and passed to both Browserless containers as TIMEOUT, so they can't drift.
       - BROWSERLESS_TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
+      - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-}
+      - VPN_CHANGE_INTERVAL=10
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - DISCORD_TOKEN=${DISCORD_TOKEN:-}
+      - HEALTHCHECKS_URL=${HEALTHCHECKS_URL:-}
+      - OpenTelemetry__OtlpEndpoint=${OpenTelemetry__OtlpEndpoint:-}
     volumes:
+      # Written by the image's non-root user (UID 1654); see "Upgrading" in docs/configuration.md.
       - ./site-checker/data:/app/data
       - ./site-checker/logs:/app/logs
       - ./site-checker/pia:/pia
-      # For VPN rotation. Uploaded scripts run inside this container, and :ro doesn't restrict API
-      # calls on the socket, so anyone who can reach the app can control the host. Keep the app on
-      # trusted networks only (see docs/configuration.md, "Trust boundary").
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+      - docker
     depends_on:
       - browserless
       - browserless-vpn
+      - docker-proxy
+
+  # The app's only access to Docker: inspecting the Browserless VPN container and restarting the two
+  # VPN containers, by name. Everything else, such as creating a container, is refused.
+  docker-proxy:
+    image: wollomatic/socket-proxy:1.13.1
+    container_name: site-checker-docker-proxy
+    restart: unless-stopped
+    # The socket's group: 0 on Docker Desktop, usually the docker group on Linux
+    # (getent group docker | cut -d: -f3).
+    user: "65534:${DOCKER_GID:-0}"
+    command:
+      - -listenip=0.0.0.0
+      - -allowfrom=site-checker
+      - -allowGET=(/v1\.[0-9]+)?/containers/site-checker-browserless-vpn/json
+      - -allowPOST=(/v1\.[0-9]+)?/containers/site-checker-(vpn|browserless-vpn)/restart
+      - -watchdoginterval=3600
+      - -stoponwatchdog
+      - -shutdowngracetime=5
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    mem_limit: 64M
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - docker
 
   browserless:
     image: ghcr.io/browserless/chromium:latest
@@ -63,12 +109,11 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    env_file:
-      - .env
     environment:
       - TZ=America/New_York
       - USER=${PIA_USERNAME}
       - PASS=${PIA_PASSWORD}
+      - LOCAL_NETWORK=${LOCAL_NETWORK:-}
       - ACTIVE_HEALTHCHECKS=1
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
@@ -78,3 +123,8 @@ services:
     command: >
       /bin/bash -c "[ -f /pia/loc.txt ] || echo 'us_michigan-pf' > /pia/loc.txt
       && LOC=$(cat /pia/loc.txt) /scripts/run"
+
+networks:
+  # Only the app and the socket proxy, with no route out.
+  docker:
+    internal: true

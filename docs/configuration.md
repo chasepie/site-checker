@@ -21,6 +21,8 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 | `PUSHOVER_USER`               | No       | Pushover user key                                                                         |
 | `DISCORD_TOKEN`               | No       | Discord bot token for notifications                                                       |
 | `HEALTHCHECKS_URL`            | No       | Healthchecks.io ping URL for uptime monitoring                                            |
+| `DOCKER_HOST`                 | No       | The Docker API the app restarts the VPN containers through. Docker Compose sets it to the socket proxy (`tcp://docker-proxy:2375`); when unset, the local Docker socket is used |
+| `DOCKER_GID`                  | No       | Docker Compose only: the group that owns the Docker socket, which the socket proxy runs as. Default `0`, right for Docker Desktop; on Linux it's usually the `docker` group (`getent group docker \| cut -d: -f3`) |
 | `OpenTelemetry__OtlpEndpoint` | No       | OpenTelemetry collector endpoint                                                          |
 
 `BROWSERLESS_URL` and `BROWSERLESS_URL_VPN` are set automatically when running via Docker Compose. They only need to be specified for local development.
@@ -29,10 +31,10 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 
 **Anyone who can reach Site Checker can run code on its host.** The app has no authentication, and
 saving a Site or starting a Test Run accepts C# source that runs inside the app, unsandboxed (see
-[ADR 0004](adr/0004-scripts-run-in-process-behind-a-trust-boundary.md)). The app container mounts
-`/var/run/docker.sock` for VPN rotation, and `:ro` doesn't restrict API calls on a socket, so a script
-can start a privileged container and take over the host. It can also read the database file and the
-environment variables.
+[ADR 0004](adr/0004-scripts-run-in-process-behind-a-trust-boundary.md)). A script can read the database
+file and the app's environment variables. The app reaches Docker only through a socket proxy that
+allows inspecting the Browserless VPN container and restarting the two VPN containers, so a script
+can't start containers, but it can restart those two.
 
 The admin token (`ADMIN_TOKEN`) is needed to save a Site or start a Test Run, and `ALLOWED_HOSTS`
 stops web pages from reaching the app through DNS rebinding. Both narrow who can upload a script,
@@ -50,6 +52,22 @@ replaced. Before upgrading an existing deployment, stop it and delete the old da
 database, the app fails with "table Sites already exists". Then re-create your Sites in the UI,
 uploading their scripts, or set `SEED_DEMO_DATA=true` once to get the two demo Sites back.
 
+## Upgrading to the hardened containers
+
+The app container now runs as the image's non-root user (UID 1654) on a read-only filesystem, reaches
+Docker through a socket proxy, and only receives the environment variables it reads. Before upgrading
+an existing deployment:
+
+1. Add `ADMIN_TOKEN` and `ALLOWED_HOSTS` to `.env`. Docker Compose refuses to start without them.
+2. Make the bind-mounted directories writable by UID 1654: `sudo chown -R 1654 site-checker/`.
+   Docker Desktop doesn't need this.
+3. On Linux, set `DOCKER_GID` in `.env` to the Docker socket's group, so the socket proxy can reach it.
+4. `docker compose up --build`.
+
+The VPN container now gets only `PIA_USERNAME`, `PIA_PASSWORD` and `LOCAL_NETWORK` from `.env`. If you
+set other `thrnz/docker-wireguard-pia` options there, add them to its `environment` in
+`docker-compose.yml`.
+
 ## Docker Services
 
 | Service         | Container                    | Port      | Description                       |
@@ -58,6 +76,7 @@ uploading their scripts, or set `SEED_DEMO_DATA=true` once to get the two demo S
 | browserless     | site-checker-browserless     | 3000      | Standard headless Chrome instance |
 | browserless-vpn | site-checker-browserless-vpn | (see vpn) | VPN-routed headless Chrome        |
 | vpn             | site-checker-vpn             | 3001      | WireGuard VPN client (PIA)        |
+| docker-proxy    | site-checker-docker-proxy    | (none)    | Allowlisting Docker socket proxy  |
 
 ```bash
 # Start all services
