@@ -31,7 +31,11 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
   - Note: authorization runs before validation, so any gated request without the token gets 401 and the prompt first, even one that would fail validation.
   - Verified in a browser against a published Production build (`ADMIN_TOKEN` and `ALLOWED_HOSTS` set, scratch database): a wrong Host gets 400, the prompt appears on Save, a wrong token shows "needs the admin token" and isn't stored, and the right token saves the Site and is remembered.
   - Found, not fixed: the existing `authInterceptor` (SignalR connection ID header) was never registered, so `EntityChangesService` never skips the sender. Harmless today (stores also update locally); worth a separate fix.
-- [ ] 2. VPN without container creation
+- [x] 2. VPN without container creation
+  - `ListLocationsAsync` stays on `IPiaContainers` (the seam the harness fakes); `DockerPiaContainers` delegates it to `PiaServerList`, which owns the US filter and shuffle now.
+  - Deviation: a region whose `servers.wg` is an empty array is skipped. `wg-gen.sh`'s jq treats `[]` as truthy, but such a region can't connect. None exist in today's list (204 regions, all with WireGuard).
+  - Container names default to `site-checker-vpn` and `site-checker-browserless-vpn` without the leading `/`, which is still trimmed from configured values.
+  - Not yet checked against real containers (none running locally); phase 3's `docker compose up` covers it.
 - [ ] 3. Docker socket proxy, env split and app container hardening
 - [ ] 4. A serializable scrape contract
 - [ ] 5. Abandoned runs
