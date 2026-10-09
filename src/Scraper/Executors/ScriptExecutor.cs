@@ -44,7 +44,12 @@ public sealed class ScriptExecutor(
 {
     private readonly ScriptCache _cache = cache;
     private readonly IScriptCompiler _compiler = compiler;
-    private readonly ILogger _scriptLogger = loggerFactory.CreateLogger("SiteChecker.Script");
+    /// <summary>
+    /// The category scripts log under. The app re-logs a remote scrape's entries under it too.
+    /// </summary>
+    public const string LoggerCategory = "SiteChecker.Script";
+
+    private readonly ILogger _scriptLogger = loggerFactory.CreateLogger(LoggerCategory);
 
     public Type SpecType => typeof(ScriptSpec);
 

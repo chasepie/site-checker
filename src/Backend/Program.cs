@@ -8,6 +8,7 @@ using Scalar.AspNetCore;
 using SiteChecker.Backend.JsonConverters;
 using SiteChecker.Backend.Services;
 using SiteChecker.Backend.Services.CheckQueue;
+using SiteChecker.Backend.Services.Scraping;
 using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.SignalR;
 using SiteChecker.Backend.Services.Sites;
@@ -19,6 +20,7 @@ using SiteChecker.Backend.Notifiers.Discord;
 using SiteChecker.Backend.Notifiers.Pushover;
 using SiteChecker.Scraper;
 using SiteChecker.Scraper.Scripts;
+using SiteChecker.Utilities;
 using SiteChecker.Backend.Extensions;
 
 namespace SiteChecker.Backend;
@@ -89,6 +91,7 @@ public class Program
             });
 
         services.AddScraperServices();
+        services.TryAddRemoteScraperService(configuration);
         services.AddScoped<DemoDataSeeder>();
         services.AddSingleton<SiteValidator>();
         services.AddSingleton<TestRunService>();
@@ -147,12 +150,20 @@ public class Program
 
     /// <summary>
     /// Fails startup on invalid scrape timeouts, and builds the script compiler's references once,
-    /// up front, rather than on the first check.
+    /// up front, rather than on the first check. Warns when scripts would run inside the app's
+    /// container because no Scrape Worker is configured.
     /// </summary>
     private static void ValidateScraperServices(WebApplication app)
     {
         app.Services.GetRequiredService<ScrapeTimeouts>();
         app.Services.GetRequiredService<IScriptCompiler>();
+
+        if (app.Services.GetRequiredService<IScraperService>() is ScraperService && EnvironmentUtils.IsDockerContainer())
+        {
+            app.Logger.LogWarning(
+                "{Key} isn't set, so scripts run inside the app's container, with its secrets and database. Run the Scrape Worker (see docker-compose.yml).",
+                RemoteScraperService.ScrapeWorkerUrlKey);
+        }
     }
 
     private static async Task ConfigureDatabaseAsync(WebApplication app)
