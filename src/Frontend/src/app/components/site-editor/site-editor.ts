@@ -426,6 +426,12 @@ export class SiteEditor {
       }
     }
 
+    if (error instanceof HttpErrorResponse && error.status === 401) {
+      this.errors.set(['Saving a Site or starting a Test Run needs the admin token.']);
+      this.diagnostics.set([]);
+      return;
+    }
+
     console.error('The server rejected the request:', error);
     const message = error instanceof HttpErrorResponse || error instanceof Error
       ? error.message

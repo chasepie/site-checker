@@ -1,11 +1,14 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using dotenv.net;
+using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using SiteChecker.Backend.JsonConverters;
 using SiteChecker.Backend.Services;
 using SiteChecker.Backend.Services.CheckQueue;
+using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.SignalR;
 using SiteChecker.Backend.Services.Sites;
 using SiteChecker.Backend.Services.TestRuns;
@@ -36,6 +39,7 @@ public class Program
         BuildServices(builder.Services, builder.Configuration, builder.Environment);
 
         var app = builder.Build();
+        ValidateSecuritySettings(app);
         BuildApplication(app);
         ValidateScraperServices(app);
         await ConfigureDatabaseAsync(app);
@@ -91,6 +95,9 @@ public class Program
 
         services.AddSiteCheckRunner();
 
+        services.AddAdminToken();
+        services.AddAllowedHosts();
+
         services.AddHttpContextAccessor();
         services.AddPiaService();
 
@@ -118,6 +125,7 @@ public class Program
         app.MapScalarApiReference();
 
         app.UseRouting();
+        app.UseAuthentication();
         app.UseAuthorization();
 
         app.MapControllers();
@@ -125,6 +133,16 @@ public class Program
         app.MapHub<DataHub>($"/{SignalRConstants.HubName}");
 
         app.MapFallbackToFile("/index.html");
+    }
+
+    /// <summary>
+    /// Fails startup when the admin token or the allowed hosts are missing outside Development,
+    /// rather than on the first request.
+    /// </summary>
+    private static void ValidateSecuritySettings(WebApplication app)
+    {
+        app.Services.GetRequiredService<AdminToken>();
+        _ = app.Services.GetRequiredService<IOptions<HostFilteringOptions>>().Value;
     }
 
     /// <summary>

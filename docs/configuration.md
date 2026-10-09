@@ -7,6 +7,8 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 | Variable                      | Required | Description                                                                               |
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `BROWSERLESS_TOKEN`           | Yes      | Authentication token for Browserless (any value works when self-hosting)                  |
+| `ADMIN_TOKEN`                 | Yes      | The token the UI asks for before saving a Site or starting a Test Run, since both run code on the host. Use a long random value (`openssl rand -hex 32`). Required outside Development; when it's unset in Development, anyone can save Sites and start Test Runs |
+| `ALLOWED_HOSTS`               | Yes      | The host names the app is reached by, separated by semicolons, such as `sitechecker.lan;sitechecker.tailnet.ts.net`. Requests with any other `Host` header are rejected, so a web page can't reach the app by pointing its own domain at the app's address (DNS rebinding). `localhost` is always allowed. Required outside Development, and can't be `*` |
 | `PIA_USERNAME`                | Yes      | Private Internet Access VPN username                                                      |
 | `PIA_PASSWORD`                | Yes      | Private Internet Access VPN password                                                      |
 | `BROWSERLESS_URL`             | Docker   | WebSocket URL for the standard Browserless instance                                       |
@@ -31,6 +33,10 @@ saving a Site or starting a Test Run accepts C# source that runs inside the app,
 `/var/run/docker.sock` for VPN rotation, and `:ro` doesn't restrict API calls on a socket, so a script
 can start a privileged container and take over the host. It can also read the database file and the
 environment variables.
+
+The admin token (`ADMIN_TOKEN`) is needed to save a Site or start a Test Run, and `ALLOWED_HOSTS`
+stops web pages from reaching the app through DNS rebinding. Both narrow who can upload a script,
+but anyone with the token still runs code on the host.
 
 Only make the app reachable from networks where everyone is trusted, such as your home LAN or a
 private VPN like Tailscale. Never expose it to the internet, even through a reverse proxy, unless the

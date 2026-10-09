@@ -25,7 +25,12 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
 - **Before merge,** the last commit deletes `PLAN.md`.
 
 ### Progress
-- [ ] 1. Host filtering and the admin token
+- [x] 1. Host filtering and the admin token
+  - Deviation: both `ADMIN_TOKEN` and `ALLOWED_HOSTS` are required outside Development (not only in Production), so Staging can't slip through.
+  - Deviation: the startup check is `Program.ValidateSecuritySettings`, not an extension: two `extension` blocks in one class trip CA1708.
+  - Note: authorization runs before validation, so any gated request without the token gets 401 and the prompt first, even one that would fail validation.
+  - Verified in a browser against a published Production build (`ADMIN_TOKEN` and `ALLOWED_HOSTS` set, scratch database): a wrong Host gets 400, the prompt appears on Save, a wrong token shows "needs the admin token" and isn't stored, and the right token saves the Site and is remembered.
+  - Found, not fixed: the existing `authInterceptor` (SignalR connection ID header) was never registered, so `EntityChangesService` never skips the sender. Harmless today (stores also update locally); worth a separate fix.
 - [ ] 2. VPN without container creation
 - [ ] 3. Docker socket proxy, env split and app container hardening
 - [ ] 4. A serializable scrape contract
