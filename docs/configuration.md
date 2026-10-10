@@ -10,6 +10,7 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 | `ADMIN_PASSWORD`              | Yes      | The password for logging in to the app; everything but the login page needs a login. Use a long random value (`openssl rand -base64 24`). Required outside Development; when it's unset in Development, login is off |
 | `SESSION_DAYS`                | No       | How many days a login lasts (default: 30, at most 36500). A visit in the second half of that renews it for the full period, so an unused login ends between half and all of it after the last visit. Restarting the app doesn't end it |
 | `ALLOWED_HOSTS`               | Yes      | The host names the app is reached by, separated by semicolons, such as `sitechecker.lan;sitechecker.tailnet.ts.net`. Requests with any other `Host` header are rejected, so a web page can't reach the app by pointing its own domain at the app's address (DNS rebinding). `localhost` is always allowed. Required outside Development, and can't include `*`, `0.0.0.0` or `[::]`, which ASP.NET Core treats as "any host" |
+| `TRUSTED_PROXIES`             | No       | The reverse proxies in front of the app, as IP addresses or CIDR ranges separated by semicolons, such as `172.18.0.0/16`. The app believes the client address and scheme they forward (`X-Forwarded-For`, `X-Forwarded-Proto`), so the login cookie is `Secure` when the proxy serves HTTPS, and login attempts are counted per client. List the address the proxy connects to the app from: a proxy container's address or its Docker network's range, or that network's gateway for a proxy on the Docker host (`docker network inspect`). When unset, forwarded headers are ignored |
 | `PIA_USERNAME`                | Yes      | Private Internet Access VPN username                                                      |
 | `PIA_PASSWORD`                | Yes      | Private Internet Access VPN password                                                      |
 | `BROWSERLESS_URL`             | Docker   | WebSocket URL for the standard Browserless instance                                       |
@@ -46,12 +47,15 @@ Docker host (`127.0.0.1`), not to the LAN.
 What's still exposed:
 
 - **The password is the key to running code.** Anyone who logs in can run code in the worker. Use a
-  long random password; login attempts are limited to 5 a minute.
+  long random password. Login attempts are limited to 5 a minute from each address and 30 a minute
+  from all of them, so a host that changes its address (easy with IPv6) can still keep everyone
+  locked out, though not guess faster. Behind a reverse proxy, list it in `TRUSTED_PROXIES`, or all
+  clients share the proxy's 5.
 - **The session cookie is as good as the password** until it expires (`SESSION_DAYS`) or the
   password changes. Logging out only removes it from that browser, so a copy of it keeps working;
   change `ADMIN_PASSWORD` to end every session. It's HttpOnly and `SameSite=Strict`, but it's only
-  `Secure` when you reach the app over HTTPS. Over plain HTTP, someone who can watch your network
-  traffic could copy it.
+  `Secure` when you reach the app over HTTPS, directly or through a proxy in `TRUSTED_PROXIES`. Over
+  plain HTTP, someone who can watch your network traffic could copy it.
 - **The browsers can reach your LAN.** A script drives Browserless, which can load any address the
   Docker host can.
 - **Without `SCRAPE_WORKER_URL`, scripts run inside the app**, with its secrets and database. That's

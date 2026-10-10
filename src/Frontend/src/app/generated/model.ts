@@ -257,7 +257,10 @@ export type SessionInfo = z.infer<typeof SessionInfo>;
 		const result = await lastValueFrom(obs$);
 		return SessionInfo.parse(result);
 	}
-	/** Logs in with the password. A wrong one gets 401; too many attempts in a minute get 429. */
+	/**
+	* Logs in with the password. A wrong one gets 401; too many attempts in a minute, from this
+	*             client or from all of them, get 429.
+	*/
 	public async login(request: LoginRequest) 
 	{
 		const obs$ = this._httpClient.request(

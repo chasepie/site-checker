@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 using SiteChecker.Backend.Models;
 using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.SignalR;
@@ -21,12 +20,14 @@ namespace SiteChecker.Backend.Controllers;
 public sealed class AuthController(
     AdminPassword adminPassword,
     IAntiforgery antiforgery,
-    HubConnections hubConnections)
+    HubConnections hubConnections,
+    LoginThrottle loginThrottle)
     : ControllerBase
 {
     private readonly AdminPassword _adminPassword = adminPassword;
     private readonly IAntiforgery _antiforgery = antiforgery;
     private readonly HubConnections _hubConnections = hubConnections;
+    private readonly LoginThrottle _loginThrottle = loginThrottle;
 
     /// <summary>
     /// Whether this browser is logged in. Also issues the antiforgery token for its next writes.
@@ -44,19 +45,25 @@ public sealed class AuthController(
     }
 
     /// <summary>
-    /// Logs in with the password. A wrong one gets 401; too many attempts in a minute get 429.
+    /// Logs in with the password. A wrong one gets 401; too many attempts in a minute, from this
+    /// client or from all of them, get 429.
     /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
     // Forging a login to the only account gains an attacker nothing, and requiring a token here
     // would mean fetching one before every login.
     [IgnoreAntiforgeryToken]
-    [EnableRateLimiting(SecurityExtensions.LoginRateLimitPolicy)]
     public async Task<ActionResult> Login([FromBody] LoginRequest request)
     {
         if (!_adminPassword.IsRequired)
         {
             return NoContent();
+        }
+        // Counted here rather than by the rate limiting middleware, which would also count requests
+        // that can't log in, such as a cross-site form post that MVC then refuses with 415.
+        if (!_loginThrottle.TryAttempt(HttpContext.Connection.RemoteIpAddress))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests);
         }
         if (!_adminPassword.Matches(request.Password.Trim()))
         {

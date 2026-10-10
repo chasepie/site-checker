@@ -15,6 +15,7 @@ services:
       # which would fail every Compose command, even one that starts only the browsers.
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       - SESSION_DAYS=${SESSION_DAYS:-}
       - DOCKER_HOST=tcp://docker-proxy:2375
       - SCRAPE_WORKER_URL=http://scrape-worker:8080

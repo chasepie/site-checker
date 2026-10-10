@@ -102,6 +102,7 @@ public class Program
 
         services.AddLogin();
         services.AddAllowedHosts();
+        services.AddTrustedProxies();
 
         services.AddHttpContextAccessor();
         services.AddPiaService();
@@ -120,6 +121,9 @@ public class Program
 
     private static void BuildApplication(WebApplication app)
     {
+        // First, so everything after sees the client's address and scheme, not the proxy's.
+        app.UseForwardedHeaders();
+
         if (app.Environment.IsProduction())
         {
             app.UseDefaultFiles();
@@ -134,7 +138,6 @@ public class Program
         app.UseHubOriginCheck($"/{SignalRConstants.HubName}");
         app.UseAuthentication();
         app.UseAuthorization();
-        app.UseRateLimiter();
 
         // Every endpoint requires the login (the fallback policy) unless it's marked anonymous.
         app.MapControllers();
@@ -146,8 +149,8 @@ public class Program
     }
 
     /// <summary>
-    /// Fails startup when the password or the allowed hosts are missing outside Development,
-    /// rather than on the first request.
+    /// Fails startup when the password or the allowed hosts are missing outside Development, or a
+    /// setting is invalid, rather than on the first request.
     /// </summary>
     private static void ValidateSecuritySettings(WebApplication app)
     {
@@ -156,6 +159,7 @@ public class Program
         _ = app.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
             .Get(CookieAuthenticationDefaults.AuthenticationScheme);
         _ = app.Services.GetRequiredService<IOptions<HostFilteringOptions>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<ForwardedHeadersOptions>>().Value;
     }
 
     /// <summary>

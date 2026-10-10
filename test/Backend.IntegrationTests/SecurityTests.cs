@@ -3,6 +3,7 @@ namespace SiteChecker.Backend.IntegrationTests;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,8 +15,8 @@ using SiteChecker.Backend.Services.SignalR;
 using SiteChecker.Scraper;
 
 /// <summary>
-/// The login, the antiforgery and rate limits around it, the hub's origin check, and the startup
-/// checks on the security settings.
+/// The login, the antiforgery and rate limits around it, trusted proxies, the hub's origin check,
+/// and the startup checks on the security settings.
 /// </summary>
 [TestClass]
 public sealed class SecurityTests
@@ -49,6 +50,22 @@ public sealed class SecurityTests
 
     private Task<HttpResponseMessage> LoginAsync(HttpClient client, string password)
         => client.PostAsJsonAsync("/api/auth/login", new { password }, Ct);
+
+    /// <summary>
+    /// Logs in from <paramref name="remoteAddress"/>, with any other headers, such as a proxy's
+    /// forwarded ones.
+    /// </summary>
+    private Task<HttpResponseMessage> LoginFromAsync(
+        HttpClient client, string remoteAddress, string password, params (string Name, string Value)[] headers)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = JsonContent.Create(new { password }) };
+        request.Headers.Add(SiteApiFactory.RemoteAddressHeader, remoteAddress);
+        foreach (var (name, value) in headers)
+        {
+            request.Headers.Add(name, value);
+        }
+        return client.SendAsync(request, Ct);
+    }
 
     private async Task<JsonNode> GetSessionAsync(HttpClient client)
         => JsonNode.Parse(await client.GetStringAsync("/api/auth/session", Ct))!;
@@ -242,11 +259,141 @@ public sealed class SecurityTests
         await using var factory = new SiteApiFactory();
         using var client = factory.CreateClient();
 
-        for (var i = 0; i < SecurityExtensions.LoginAttemptsPerMinute; i++)
+        for (var i = 0; i < LoginThrottle.AttemptsPerClient; i++)
         {
             Assert.AreEqual(HttpStatusCode.Unauthorized, (await LoginAsync(client, $"guess-{i}")).StatusCode);
         }
         var limited = await LoginAsync(client, SiteApiFactory.Password);
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Login_LimitedForOneClient_StillWorksForAnother()
+    {
+        await using var factory = new SiteApiFactory();
+        using var client = factory.CreateClient();
+
+        for (var i = 0; i < LoginThrottle.AttemptsPerClient; i++)
+        {
+            Assert.AreEqual(HttpStatusCode.Unauthorized, (await LoginFromAsync(client, "192.0.2.1", $"guess-{i}")).StatusCode);
+        }
+        var limited = await LoginFromAsync(client, "192.0.2.1", SiteApiFactory.Password);
+        var other = await LoginFromAsync(client, "192.0.2.2", SiteApiFactory.Password);
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NoContent, other.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Login_AfterTooManyAttemptsFromAllClients_IsTooManyRequests_EvenFromANewOne()
+    {
+        await using var factory = new SiteApiFactory();
+        using var client = factory.CreateClient();
+
+        for (var i = 0; i < LoginThrottle.AttemptsInAll; i++)
+        {
+            var from = $"192.0.2.{1 + (i / LoginThrottle.AttemptsPerClient)}";
+            Assert.AreEqual(HttpStatusCode.Unauthorized, (await LoginFromAsync(client, from, $"guess-{i}")).StatusCode);
+        }
+        var limited = await LoginFromAsync(client, "198.51.100.1", SiteApiFactory.Password);
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Login_RefusedForItsClient_DoesNotCountTowardTheLimitInAll()
+    {
+        await using var factory = new SiteApiFactory();
+        using var client = factory.CreateClient();
+
+        for (var i = 0; i < LoginThrottle.AttemptsInAll; i++)
+        {
+            await LoginFromAsync(client, "192.0.2.1", $"guess-{i}");
+        }
+        var other = await LoginFromAsync(client, "192.0.2.2", SiteApiFactory.Password);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, other.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Login_RequestsThatCantLogIn_DoNotUseUpAttempts()
+    {
+        await using var factory = new SiteApiFactory();
+        using var client = factory.CreateClient();
+
+        // A page on another site can send this without a CORS preflight, but not a JSON body.
+        for (var i = 0; i < LoginThrottle.AttemptsInAll; i++)
+        {
+            using var formPost = new StringContent($"{{\"password\":\"guess-{i}\"}}", Encoding.UTF8, "text/plain");
+            Assert.AreEqual(HttpStatusCode.UnsupportedMediaType, (await client.PostAsync("/api/auth/login", formPost, Ct)).StatusCode);
+        }
+        var login = await LoginAsync(client, SiteApiFactory.Password);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, login.StatusCode);
+    }
+
+    // ---- Trusted proxies ----
+
+    private static Dictionary<string, string?> TrustedProxies(string? proxies) => new()
+    {
+        [SecurityExtensions.TrustedProxiesKey] = proxies,
+    };
+
+    private static bool IsSecure(string setCookie)
+        => setCookie.Split(';').Skip(1).Any(attribute => attribute.Trim().Equals("secure", StringComparison.OrdinalIgnoreCase));
+
+    [TestMethod]
+    [DataRow("10.0.0.1", "10.0.0.1", true)]
+    // Dual-mode sockets report IPv4 clients like this.
+    [DataRow("10.0.0.0/24", "::ffff:10.0.0.7", true)]
+    [DataRow("fd00::/64", "fd00::5", true)]
+    [DataRow("10.0.0.1", "10.0.0.2", false)]
+    [DataRow(null, "10.0.0.1", false)]
+    public async Task Cookies_BehindAProxyServingHttps_AreSecure_OnlyIfItsTrusted(string? trustedProxies, string proxy, bool secure)
+    {
+        await using var factory = new SiteApiFactory(settings: TrustedProxies(trustedProxies));
+        using var client = factory.CreateClient();
+
+        var login = await LoginFromAsync(client, proxy, SiteApiFactory.Password,
+            ("X-Forwarded-For", "192.0.2.1"), ("X-Forwarded-Proto", "https"));
+
+        Assert.AreEqual(HttpStatusCode.NoContent, login.StatusCode);
+        var cookies = login.Headers.GetValues("Set-Cookie").ToList();
+        Assert.AreEqual(secure, IsSecure(cookies.Single(c => c.StartsWith(SecurityExtensions.SessionCookieName + "=", StringComparison.Ordinal))));
+        Assert.AreEqual(secure, IsSecure(cookies.Single(c => c.StartsWith(SecurityExtensions.AntiforgeryCookieName + "=", StringComparison.Ordinal))));
+    }
+
+    [TestMethod]
+    public async Task Login_BehindATrustedProxy_IsLimitedPerForwardedClient()
+    {
+        await using var factory = new SiteApiFactory(settings: TrustedProxies("10.0.0.1"));
+        using var client = factory.CreateClient();
+
+        for (var i = 0; i < LoginThrottle.AttemptsPerClient; i++)
+        {
+            var guess = await LoginFromAsync(client, "10.0.0.1", $"guess-{i}", ("X-Forwarded-For", "192.0.2.1"));
+            Assert.AreEqual(HttpStatusCode.Unauthorized, guess.StatusCode);
+        }
+        var limited = await LoginFromAsync(client, "10.0.0.1", SiteApiFactory.Password, ("X-Forwarded-For", "192.0.2.1"));
+        var other = await LoginFromAsync(client, "10.0.0.1", SiteApiFactory.Password, ("X-Forwarded-For", "192.0.2.2"));
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NoContent, other.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Login_ThroughAnUntrustedProxy_IgnoresTheClientsItForwards()
+    {
+        await using var factory = new SiteApiFactory(settings: TrustedProxies("10.0.0.1"));
+        using var client = factory.CreateClient();
+
+        for (var i = 0; i < LoginThrottle.AttemptsPerClient; i++)
+        {
+            var guess = await LoginFromAsync(client, "10.0.0.2", $"guess-{i}", ("X-Forwarded-For", $"192.0.2.{i + 1}"));
+            Assert.AreEqual(HttpStatusCode.Unauthorized, guess.StatusCode);
+        }
+        var limited = await LoginFromAsync(client, "10.0.0.2", SiteApiFactory.Password, ("X-Forwarded-For", "198.51.100.1"));
 
         Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
     }
@@ -316,6 +463,19 @@ public sealed class SecurityTests
         var exception = Assert.Throws<Exception>(() => factory.CreateClient());
 
         Assert.Contains(SecurityExtensions.SessionDaysKey, exception.GetBaseException().Message);
+    }
+
+    [TestMethod]
+    [DataRow("proxy.lan")]
+    [DataRow("10.0.0.1;proxy.lan")]
+    [DataRow("10.0.0.0/33")]
+    public async Task InvalidTrustedProxies_FailsStartup(string trustedProxies)
+    {
+        await using var factory = new SiteApiFactory(settings: TrustedProxies(trustedProxies));
+
+        var exception = Assert.Throws<Exception>(() => factory.CreateClient());
+
+        Assert.Contains(SecurityExtensions.TrustedProxiesKey, exception.GetBaseException().Message);
     }
 
     // ---- The hub's origin check ----

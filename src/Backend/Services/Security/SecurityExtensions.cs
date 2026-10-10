@@ -1,11 +1,12 @@
 using System.Globalization;
+using System.Net;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HostFiltering;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 using SiteChecker.Utilities;
 
 namespace SiteChecker.Backend.Services.Security;
@@ -17,6 +18,13 @@ public static class SecurityExtensions
     /// added, for the container healthcheck.
     /// </summary>
     public const string AllowedHostsKey = "ALLOWED_HOSTS";
+
+    /// <summary>
+    /// The reverse proxies in front of the app, as IP addresses or CIDR ranges separated by
+    /// semicolons. Their <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c> headers are believed;
+    /// anyone else's are ignored.
+    /// </summary>
+    public const string TrustedProxiesKey = "TRUSTED_PROXIES";
 
     /// <summary>
     /// How many days a login lasts (default 30). A request in the second half of that renews it for
@@ -38,10 +46,6 @@ public static class SecurityExtensions
     /// </summary>
     public const string AntiforgeryCookieName = "XSRF-TOKEN";
 
-    public const string LoginRateLimitPolicy = "login";
-
-    public const int LoginAttemptsPerMinute = 5;
-
     private const int DefaultSessionDays = 30;
 
     /// <summary>
@@ -61,8 +65,9 @@ public static class SecurityExtensions
         /// <summary>
         /// Registers the login: <see cref="AdminPassword"/>, cookie sessions lasting
         /// <c>SESSION_DAYS</c>, a fallback policy that puts every endpoint behind the login (unless
-        /// no password is required), antiforgery on every controller write, the login rate limit,
-        /// and data protection keys kept in the data directory, so a restart doesn't log you out.
+        /// no password is required), antiforgery on every controller write, the
+        /// <see cref="LoginThrottle"/>, and data protection keys kept in the data directory, so a
+        /// restart doesn't log you out.
         /// </summary>
         public IServiceCollection AddLogin()
         {
@@ -78,7 +83,8 @@ public static class SecurityExtensions
                     options.Cookie.Name = SessionCookieName;
                     options.Cookie.HttpOnly = true;
                     options.Cookie.SameSite = SameSiteMode.Strict;
-                    // The app is often reached over plain HTTP on the LAN.
+                    // The app is often reached over plain HTTP on the LAN. Behind a proxy that serves
+                    // HTTPS, this needs the proxy in TRUSTED_PROXIES to see the request as HTTPS.
                     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                     options.ExpireTimeSpan = TimeSpan.FromDays(ReadSessionDays(configuration));
                     options.SlidingExpiration = true;
@@ -113,17 +119,7 @@ public static class SecurityExtensions
             services.AddAntiforgery(options => options.HeaderName = AntiforgeryHeaderName);
             services.Configure<MvcOptions>(options => options.Filters.Add<ValidateAntiforgeryFilter>());
 
-            services.AddRateLimiter(options =>
-            {
-                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-                // One user, so one shared window: no per-client partition to get wrong behind a proxy.
-                options.AddFixedWindowLimiter(LoginRateLimitPolicy, window =>
-                {
-                    window.PermitLimit = LoginAttemptsPerMinute;
-                    window.Window = TimeSpan.FromMinutes(1);
-                    window.QueueLimit = 0;
-                });
-            });
+            services.AddSingleton<LoginThrottle>();
 
             services
                 .AddDataProtection()
@@ -161,6 +157,52 @@ public static class SecurityExtensions
                     }
 
                     options.AllowedHosts = [.. hosts.Append("localhost").Distinct(StringComparer.OrdinalIgnoreCase)];
+                });
+            return services;
+        }
+
+        /// <summary>
+        /// Believes the client address and scheme that the proxies in <c>TRUSTED_PROXIES</c> forward,
+        /// so the session cookie is <c>Secure</c> behind a proxy that serves HTTPS, and login
+        /// attempts are counted per client rather than per proxy. Without it, forwarded headers are
+        /// ignored. The Host header is never taken from them, so <c>ALLOWED_HOSTS</c> still sees the
+        /// one the proxy sent.
+        /// </summary>
+        public IServiceCollection AddTrustedProxies()
+        {
+            services
+                .AddOptions<ForwardedHeadersOptions>()
+                .Configure<IConfiguration>((options, configuration) =>
+                {
+                    // Only the configured proxies, not ASP.NET Core's default of loopback.
+                    options.KnownProxies.Clear();
+                    options.KnownIPNetworks.Clear();
+                    foreach (var entry in (configuration[TrustedProxiesKey] ?? string.Empty)
+                        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        // A range first: IPAddress parses "fd00::/64" too, as the one address.
+                        if (entry.Contains('/') && System.Net.IPNetwork.TryParse(entry, out var network))
+                        {
+                            options.KnownIPNetworks.Add(network);
+                        }
+                        else if (!entry.Contains('/') && IPAddress.TryParse(entry, out var address))
+                        {
+                            options.KnownProxies.Add(address);
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException(
+                                $"{TrustedProxiesKey} must list IP addresses or CIDR ranges (such as '172.18.0.0/16'), separated by semicolons, but has '{entry}'.");
+                        }
+                    }
+
+                    // With nothing listed, an empty list would mean "believe anyone", so read nothing.
+                    options.ForwardedHeaders = options.KnownProxies.Count + options.KnownIPNetworks.Count > 0
+                        ? ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+                        : ForwardedHeaders.None;
+                    // Walk back through every trusted proxy in a chain, stopping at the first address
+                    // that isn't one, rather than only the last hop.
+                    options.ForwardLimit = null;
                 });
             return services;
         }

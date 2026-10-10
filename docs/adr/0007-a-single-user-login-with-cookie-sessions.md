@@ -6,7 +6,7 @@ The whole app is behind a login with one password (`ADMIN_PASSWORD`) and no user
 
 Around it:
 - Every controller write needs an antiforgery token. Angular's HttpClient sends it from the `XSRF-TOKEN` cookie. `SameSite=Strict` alone isn't enough, because hosts under a shared suffix such as `ts.net` count as the same site.
-- Login attempts are limited to 5 a minute.
+- Login attempts are limited to 5 a minute from each address and 30 from all of them, so another host can't lock you out by itself, and changing addresses doesn't buy more guesses. Only requests that can log in count, so a cross-site form post can't use them up. Behind a reverse proxy, the client's address comes from `X-Forwarded-For` only if the proxy is in `TRUSTED_PROXIES`.
 - The hub refuses pages on other hosts, since CORS doesn't cover WebSockets.
 - A logout closes every hub connection, because SignalR keeps the login a connection started with.
 

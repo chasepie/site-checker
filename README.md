@@ -147,7 +147,7 @@ through a socket proxy that can do nothing but restart the VPN containers.
 
 The login is one shared password, so keep the app on trusted networks (a home LAN, a private VPN like
 Tailscale), and don't expose it to the internet without a reverse proxy that adds HTTPS and its own
-login. See [docs/configuration.md](docs/configuration.md#trust-boundary).
+login (list it in `TRUSTED_PROXIES`). See [docs/configuration.md](docs/configuration.md#trust-boundary).
 
 ## Technology Stack
 

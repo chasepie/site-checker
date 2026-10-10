@@ -2,6 +2,7 @@ namespace SiteChecker.Backend.IntegrationTests;
 
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -20,7 +21,8 @@ using SiteChecker.Scraper;
 /// <c>site-checker/data</c> file), with demo data off, no background services, and a fake scraper.
 /// Its password is <see cref="Password"/>: <see cref="CreateLoggedInClientAsync"/> logs in with it,
 /// and <c>CreateClient()</c> gives a client that isn't logged in. Cookie keys go to a temporary
-/// directory, deleted with the factory, rather than the repo's data directory.
+/// directory, deleted with the factory, rather than the repo's data directory. A request carrying
+/// <see cref="RemoteAddressHeader"/> comes from that address.
 /// </summary>
 /// <param name="environment">The host environment; Development unless a test needs another.</param>
 /// <param name="settings">Configuration that replaces the factory's defaults, such as
@@ -33,6 +35,12 @@ internal sealed class SiteApiFactory(
     string? keysDirectory = null) : WebApplicationFactory<Program>
 {
     public const string Password = "test-password";
+
+    /// <summary>
+    /// A request carrying this header comes from that address, as if over TCP; TestServer otherwise
+    /// gives every request none. Applied before the app's own middleware.
+    /// </summary>
+    public const string RemoteAddressHeader = "X-Test-Remote-Address";
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private readonly string _keysDirectory = keysDirectory ?? Path.Combine(Path.GetTempPath(), $"site-checker-keys-{Guid.NewGuid():N}");
@@ -67,6 +75,7 @@ internal sealed class SiteApiFactory(
             // Registered after the app's, so it replaces the data directory as the key store.
             services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(_keysDirectory));
             services.AddSingleton<IScraperService>(Scraper);
+            services.AddSingleton<IStartupFilter, RemoteAddressFromHeader>();
 
             // The app's own background services: the check timer and queue, and the health ping.
             var appHostedServices = services
@@ -101,6 +110,22 @@ internal sealed class SiteApiFactory(
         var prefix = SecurityExtensions.AntiforgeryCookieName + "=";
         var cookie = response.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith(prefix, StringComparison.Ordinal));
         return Uri.UnescapeDataString(cookie[prefix.Length..cookie.IndexOf(';', StringComparison.Ordinal)]);
+    }
+
+    private sealed class RemoteAddressFromHeader : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((context, nextMiddleware) =>
+            {
+                if (context.Request.Headers.TryGetValue(RemoteAddressHeader, out var address))
+                {
+                    context.Connection.RemoteIpAddress = IPAddress.Parse(address.ToString());
+                }
+                return nextMiddleware(context);
+            });
+            next(app);
+        };
     }
 
     public SiteCheckerDbContext CreateDbContext() => new(
