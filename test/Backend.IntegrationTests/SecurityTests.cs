@@ -4,7 +4,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Hosting;
+using SiteChecker.Backend.Services.Scraping;
 using SiteChecker.Backend.Services.Security;
+using SiteChecker.Scraper;
 
 /// <summary>
 /// The admin token on the actions that upload or run a script, and host filtering.
@@ -145,6 +147,21 @@ public sealed class SecurityTests
         var exception = Assert.Throws<Exception>(() => factory.CreateClient());
 
         Assert.Contains(SecurityExtensions.AllowedHostsKey, exception.GetBaseException().Message);
+    }
+
+    [TestMethod]
+    public async Task Production_WithAScrapeWorkerButNoSecret_FailsStartup()
+    {
+        await using var factory = new SiteApiFactory(Environments.Production, new Dictionary<string, string?>
+        {
+            [SecurityExtensions.AllowedHostsKey] = "sitechecker.lan",
+            [RemoteScraperService.ScrapeWorkerUrlKey] = "http://scrape-worker:8080",
+            [ScrapeWorkerSecret.Key] = null,
+        });
+
+        var exception = Assert.Throws<Exception>(() => factory.CreateClient());
+
+        Assert.Contains(ScrapeWorkerSecret.Key, exception.GetBaseException().Message);
     }
 
     [TestMethod]

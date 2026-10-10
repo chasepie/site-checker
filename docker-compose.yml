@@ -17,6 +17,8 @@ services:
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
       - DOCKER_HOST=tcp://docker-proxy:2375
       - SCRAPE_WORKER_URL=http://scrape-worker:8080
+      # Required (the same value as the worker's); without it the app stops at startup.
+      - SCRAPE_WORKER_SECRET=${SCRAPE_WORKER_SECRET:-}
       # Only to choose each Site's browser; the worker connects to them.
       - BROWSERLESS_URL=ws://browserless:3000
       - BROWSERLESS_URL_VPN=ws://vpn:3000
@@ -52,7 +54,7 @@ services:
       - docker-proxy
 
   # Runs every scrape, so uploaded scripts run here rather than in the app: no secrets but the
-  # Browserless token, no volumes, no Docker access, and no route out except through the browsers.
+  # Browserless token and its own secret, no volumes, no Docker access, and no route out except through the browsers.
   scrape-worker:
     container_name: site-checker-scrape-worker
     build:
@@ -67,6 +69,9 @@ services:
       - BROWSERLESS_TOKEN=${BROWSERLESS_TOKEN}
       - BROWSERLESS_TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
       - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-}
+      # Only the app's requests carry it; anything else that reaches the worker, such as a page in
+      # Browserless, can't run a script. Without it the worker stops at startup.
+      - SCRAPE_WORKER_SECRET=${SCRAPE_WORKER_SECRET:-}
     read_only: true
     tmpfs:
       - /tmp
@@ -115,8 +120,10 @@ services:
     image: ghcr.io/browserless/chromium:latest
     container_name: site-checker-browserless
     restart: unless-stopped
+    # For running the backend outside Docker (docs/local-development.md). Only on this machine: from
+    # the LAN, the browser would be a way to reach the worker and the app's internal network.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - TZ=America/New_York
       - TOKEN=${BROWSERLESS_TOKEN}
@@ -142,7 +149,7 @@ services:
     image: thrnz/docker-wireguard-pia:latest
     container_name: site-checker-vpn
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     volumes:
       - ./site-checker/pia:/pia
     cap_add:

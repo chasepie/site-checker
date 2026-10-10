@@ -49,6 +49,8 @@ public sealed class RemoteScraperServiceTests
         }
         """;
 
+    private const string WorkerSecret = "test-worker-secret";
+
     public TestContext TestContext { get; set; } = null!;
 
     private CancellationToken Ct => TestContext.CancellationToken;
@@ -69,10 +71,19 @@ public sealed class RemoteScraperServiceTests
             var browsers = Substitute.For<IBrowserProvider>();
             browsers.OpenAsync(Arg.Any<BrowserType>(), Arg.Any<CancellationToken>()).Returns(session);
 
+            builder.UseSetting(ScrapeWorkerSecret.Key, WorkerSecret);
             builder.ConfigureTestServices(services => services.AddSingleton(browsers));
         }
 
-        HttpClient IHttpClientFactory.CreateClient(string name) => CreateClient();
+        /// <summary>
+        /// Sends the secret, as the app's named client does.
+        /// </summary>
+        HttpClient IHttpClientFactory.CreateClient(string name)
+        {
+            var client = CreateClient();
+            client.DefaultRequestHeaders.Authorization = new("Bearer", WorkerSecret);
+            return client;
+        }
     }
 
     private static RemoteScraperService CreateService(IHttpClientFactory worker)

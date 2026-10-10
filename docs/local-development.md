@@ -72,7 +72,8 @@ it. To run scripts in the worker locally, as Compose does:
 dotnet run --project src/ScrapeWorker   # listens on http://localhost:5280
 ```
 
-Then set `SCRAPE_WORKER_URL=http://localhost:5280` in `.env` and start the backend. The worker needs
+Then set `SCRAPE_WORKER_URL=http://localhost:5280` in `.env` and start the backend. If `.env` sets
+`SCRAPE_WORKER_SECRET`, both read it; in Development both also run without it. The worker needs
 the browser settings, since it opens the browsers. The backend uses them only to choose each Site's
 browser.
 

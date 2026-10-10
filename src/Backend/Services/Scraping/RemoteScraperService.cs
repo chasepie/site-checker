@@ -221,11 +221,15 @@ public static class RemoteScraperServiceExtensions
 
             // Relative paths resolve under the base address only when it ends with a slash.
             var baseAddress = new Uri(workerUrl.EndsWith('/') ? workerUrl : workerUrl + "/");
-            services.AddHttpClient(RemoteScraperService.HttpClientName, client =>
+            services.AddHttpClient(RemoteScraperService.HttpClientName, (serviceProvider, client) =>
             {
                 client.BaseAddress = baseAddress;
                 // Each call sets its own deadline from the Site's timeout.
                 client.Timeout = Timeout.InfiniteTimeSpan;
+                if (ScrapeWorkerSecret.Read(serviceProvider.GetRequiredService<IConfiguration>()) is { } secret)
+                {
+                    client.DefaultRequestHeaders.Authorization = new("Bearer", secret);
+                }
             });
             services.AddSingleton(RemoteScraperOptions.Default);
             services.Replace(ServiceDescriptor.Singleton<IScraperService, RemoteScraperService>());

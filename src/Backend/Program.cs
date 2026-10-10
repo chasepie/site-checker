@@ -150,13 +150,26 @@ public class Program
 
     /// <summary>
     /// Fails startup on invalid scrape timeouts, and builds the script compiler's references once,
-    /// up front, rather than on the first check. Warns when scripts would run inside the app's
-    /// container because no Scrape Worker is configured.
+    /// up front, rather than on the first check. Outside Development, a Scrape Worker needs its
+    /// secret. Warns when scripts would run inside the app's container because no Scrape Worker is
+    /// configured.
     /// </summary>
     private static void ValidateScraperServices(WebApplication app)
     {
         app.Services.GetRequiredService<ScrapeTimeouts>();
         app.Services.GetRequiredService<IScriptCompiler>();
+
+        if (!string.IsNullOrWhiteSpace(app.Configuration[RemoteScraperService.ScrapeWorkerUrlKey])
+            && ScrapeWorkerSecret.Read(app.Configuration) is null)
+        {
+            if (!app.Environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    $"{ScrapeWorkerSecret.Key} must be set when {RemoteScraperService.ScrapeWorkerUrlKey} is, to the same value as the Scrape Worker's.");
+            }
+
+            app.Logger.LogWarning("{Key} isn't set, so the Scrape Worker must be running without one too.", ScrapeWorkerSecret.Key);
+        }
 
         if (app.Services.GetRequiredService<IScraperService>() is ScraperService && EnvironmentUtils.IsDockerContainer())
         {

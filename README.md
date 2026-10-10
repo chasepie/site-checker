@@ -79,7 +79,7 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 2. **Configure environment variables**
    ```bash
    cp example.env .env
-   # Edit .env with your configuration. ADMIN_TOKEN and ALLOWED_HOSTS are required.
+   # Edit .env with your configuration. ADMIN_TOKEN, ALLOWED_HOSTS and SCRAPE_WORKER_SECRET are required.
    ```
 
    On Linux, also create the data directories for the app's non-root user (UID 1654), since Docker
@@ -141,7 +141,7 @@ enforces, and how to set up an authoring project with the `SiteChecker.Scripting
 ## Security
 
 Uploaded scripts run unsandboxed, but in the Scrape Worker container: it has no secrets but the
-Browserless token, no volumes, no Docker access and no route out except through the browsers. Saving a
+Browserless token and its own secret, no volumes, no Docker access and no route out except through the browsers. Saving a
 Site or starting a Test Run needs the admin token (`ADMIN_TOKEN`), and the app reaches Docker only
 through a socket proxy that can do nothing but restart the VPN containers.
 
