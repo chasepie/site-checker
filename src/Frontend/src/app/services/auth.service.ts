@@ -44,10 +44,17 @@ export class AuthService {
     return session.loggedIn;
   }
 
-  /** At startup: connects to the hub if logged in. */
+  /**
+   * At startup: connects to the hub if logged in. If it can't, the app loads anyway and keeps
+   * trying, rather than failing startup and leaving a blank page.
+   */
   public async initialize() {
     if (await this.refresh()) {
-      await this._signalr.start();
+      try {
+        await this._signalr.start();
+      } catch {
+        void this.reconnectIfStillLoggedIn();
+      }
     }
   }
 
@@ -87,8 +94,8 @@ export class AuthService {
   }
 
   /**
-   * The hub closed for good: the server closes connections on any logout, which also stops
-   * automatic reconnecting. Starts it again while the session is still valid.
+   * The hub closed for good (the server closes connections on any logout, which also stops
+   * automatic reconnecting), or didn't start. Starts it again while the session is still valid.
    */
   private async reconnectIfStillLoggedIn() {
     for (let attempt = 0; ; attempt++) {
