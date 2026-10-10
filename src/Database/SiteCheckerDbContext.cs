@@ -38,18 +38,7 @@ public class SiteCheckerDbContext : DbContext
 
     private static string GetDefaultDbPath()
     {
-        string dbDir;
-
-        if (!EnvironmentUtils.IsDockerContainer()
-            && RepoUtils.TryGetRepoDirectory(out var repoRoot))
-        {
-            dbDir = Path.Join(repoRoot, "site-checker/data");
-        }
-        else
-        {
-            dbDir = Path.Join(AppContext.BaseDirectory, "data");
-        }
-
+        var dbDir = AppDirectories.Data;
         if (!Directory.Exists(dbDir))
         {
             Directory.CreateDirectory(dbDir);

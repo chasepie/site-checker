@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HubConnectionBuilder } from '@microsoft/signalr';
+import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Observable } from 'rxjs';
 import { ZodType } from 'zod';
 import {
@@ -48,7 +48,27 @@ export class SignalrService {
     return this._connection.connectionId;
   }
 
-  public async init() {
-    await this._connection.start();
+  /** Connects, unless already connected or connecting. The hub requires a login. */
+  public async start() {
+    if (this._connection.state === HubConnectionState.Disconnected) {
+      await this._connection.start();
+    }
+  }
+
+  public async stop() {
+    await this._connection.stop();
+  }
+
+  /**
+   * Called when the connection closes for good, after automatic reconnecting gives up. The server
+   * closes it when the session expires.
+   */
+  public onClose(callback: (error?: Error) => void) {
+    this._connection.onclose(callback);
+  }
+
+  /** Called when the connection drops and automatic reconnecting starts, such as after a logout. */
+  public onReconnecting(callback: (error?: Error) => void) {
+    this._connection.onreconnecting(callback);
   }
 }

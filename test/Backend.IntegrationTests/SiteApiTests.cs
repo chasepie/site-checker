@@ -72,7 +72,7 @@ public sealed class SiteApiTests
     public async Task CreateSite_StoresItsScript_ButSiteResponsesNeverIncludeTheSource()
     {
         await using var factory = new SiteApiFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
 
         var created = await CreateSiteAsync(client);
 
@@ -100,7 +100,7 @@ public sealed class SiteApiTests
     public async Task CreateSite_WithAScriptThatDoesNotCompile_IsRejectedWithItsDiagnostics()
     {
         await using var factory = new SiteApiFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
 
         var response = await client.PostAsJsonAsync("/api/site", SiteBody(BrokenScript, "Broken.cs"), Ct);
 
@@ -117,7 +117,7 @@ public sealed class SiteApiTests
     public async Task CreateSite_WhoseScraperHasNoScript_IsRejected()
     {
         await using var factory = new SiteApiFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
 
         var response = await client.PostAsJsonAsync("/api/site", SiteBody(source: null), Ct);
 
@@ -129,7 +129,7 @@ public sealed class SiteApiTests
     public async Task CreateSite_WithATimeoutThatDoesNotFitUnderBrowserless_IsRejected()
     {
         await using var factory = new SiteApiFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
 
         // The default BROWSERLESS_TIMEOUT of 180 s leaves at most 170 s.
         var response = await client.PostAsJsonAsync("/api/site", SiteBody(timeoutSeconds: 171), Ct);
@@ -142,7 +142,7 @@ public sealed class SiteApiTests
     public async Task UpdateSite_WithoutAScriptKeepsTheCurrentOne_AndANewScriptReplacesIt()
     {
         await using var factory = new SiteApiFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
         var id = (await CreateSiteAsync(client))["id"]!.GetValue<int>();
 
         var renamed = await client.PutAsJsonAsync($"/api/site/{id}", SiteBody(source: null, id: id, name: "Renamed", timeoutSeconds: 60), Ct);
@@ -165,7 +165,7 @@ public sealed class SiteApiTests
     public async Task DeleteSite_RemovesTheSiteWithItsChecksAndScript()
     {
         await using var factory = new SiteApiFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
         var id = (await CreateSiteAsync(client))["id"]!.GetValue<int>();
         await using (var dbContext = factory.CreateDbContext())
         {
@@ -189,7 +189,7 @@ public sealed class SiteApiTests
     public async Task StartTestRun_IsAccepted_ForAValidScript_AndRejectedWithDiagnosticsForABrokenOne()
     {
         await using var factory = new SiteApiFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
         object TestRun(string source) => new
         {
             testRunId = "run-1",

@@ -224,6 +224,73 @@ export const TestRunResult = z.object({
 });
 export type TestRunResult = z.infer<typeof TestRunResult>;
 
+export const LoginRequest = z.object({
+	password: z.string(),
+});
+export type LoginRequest = z.infer<typeof LoginRequest>;
+
+export const SessionInfo = z.object({
+	loginRequired: z.boolean(),
+	loggedIn: z.boolean(),
+});
+export type SessionInfo = z.infer<typeof SessionInfo>;
+
+/**
+* The login. There's one password (<c>ADMIN_PASSWORD</c>) and no users; a login is a session
+*             cookie that every other endpoint requires. Only the session check and the login itself are open;
+*             logging out needs a login, like everything else.
+*/
+@Injectable({ providedIn: 'root'}) export class AuthController
+{
+	private _httpClient: HttpClient = inject(HttpClient);
+	/** Whether this browser is logged in. Also issues the antiforgery token for its next writes. */
+	public async getSession() 
+	{
+		const obs$ = this._httpClient.request(
+			'GET',
+			`api/Auth/session`,
+			{
+				params: {},
+				body: null
+			}
+		);
+		const result = await lastValueFrom(obs$);
+		return SessionInfo.parse(result);
+	}
+	/**
+	* Logs in with the password. A wrong one gets 401; too many attempts in a minute, from this
+	*             client or from all of them, get 429.
+	*/
+	public async login(request: LoginRequest) 
+	{
+		const obs$ = this._httpClient.request(
+			'POST',
+			`api/Auth/login`,
+			{
+				params: {},
+				body: request
+			}
+		);
+		await lastValueFrom(obs$);
+	}
+	/**
+	* Ends this browser's session, and closes every live-update connection, which would otherwise
+	*             carry on with the login they started with. Browsers still logged in reconnect. Needs a login,
+	*             so a stranger can't close everyone's connections.
+	*/
+	public async logout() 
+	{
+		const obs$ = this._httpClient.request(
+			'POST',
+			`api/Auth/logout`,
+			{
+				params: {},
+				body: null
+			}
+		);
+		await lastValueFrom(obs$);
+	}
+}
 @Injectable({ providedIn: 'root'}) export class SiteCheckController
 {
 	private _httpClient: HttpClient = inject(HttpClient);
@@ -348,10 +415,7 @@ export type TestRunResult = z.infer<typeof TestRunResult>;
 		const result = await lastValueFrom(obs$);
 		return Site.parse(result);
 	}
-	/**
-	* Creates a Site with its Scraper. A script that doesn't compile is rejected with its errors.
-	*             Requires the admin token.
-	*/
+	/** Creates a Site with its Scraper. A script that doesn't compile is rejected with its errors. */
 	public async createSite(siteRequest: SiteRequest) 
 	{
 		const obs$ = this._httpClient.request(
@@ -365,10 +429,7 @@ export type TestRunResult = z.infer<typeof TestRunResult>;
 		const result = await lastValueFrom(obs$);
 		return Site.parse(result);
 	}
-	/**
-	* Updates a Site's settings and Scraper. Without a script, the Site keeps its current one.
-	*             Requires the admin token.
-	*/
+	/** Updates a Site's settings and Scraper. Without a script, the Site keeps its current one. */
 	public async updateSite(id: number, siteRequest: SiteRequest) 
 	{
 		const obs$ = this._httpClient.request(
@@ -411,7 +472,7 @@ export type TestRunResult = z.infer<typeof TestRunResult>;
 	}
 	/**
 	* Starts a Test Run of an unsaved Scraper and Site settings. The result is sent to the given
-	*             SignalR connection only, as OnTestRunCompleted. Requires the admin token.
+	*             SignalR connection only, as OnTestRunCompleted.
 	*/
 	public async startTestRun(testRunRequest: TestRunRequest) 
 	{

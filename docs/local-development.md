@@ -77,8 +77,9 @@ Then set `SCRAPE_WORKER_URL=http://localhost:5280` in `.env` and start the backe
 the browser settings, since it opens the browsers. The backend uses them only to choose each Site's
 browser.
 
-In Development, `ADMIN_TOKEN` and `ALLOWED_HOSTS` are optional: without a token, anyone can save Sites
-and start Test Runs.
+In Development, `ADMIN_PASSWORD` and `ALLOWED_HOSTS` are optional: without a password, login is off and
+the app opens without a login page. Set `ADMIN_PASSWORD` in `.env` to work on the login itself. Login
+keys are kept in `site-checker/data/keys`, next to the database, so restarting doesn't log you out.
 
 ### Frontend
 

@@ -13,8 +13,10 @@ services:
       - TZ=America/New_York
       # Both required: without them the app stops at startup and logs which is missing. Not `:?`,
       # which would fail every Compose command, even one that starts only the browsers.
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      - SESSION_DAYS=${SESSION_DAYS:-}
       - DOCKER_HOST=tcp://docker-proxy:2375
       - SCRAPE_WORKER_URL=http://scrape-worker:8080
       # Required (the same value as the worker's); without it the app stops at startup.

@@ -1,9 +1,7 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Backend.Extensions;
 using SiteChecker.Backend.Models;
-using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.Sites;
 using SiteChecker.Backend.Services.TestRuns;
 using SiteChecker.Database;
@@ -54,9 +52,7 @@ public sealed class SiteController(
 
     /// <summary>
     /// Creates a Site with its Scraper. A script that doesn't compile is rejected with its errors.
-    /// Requires the admin token.
     /// </summary>
-    [Authorize(Policy = AdminToken.PolicyName)]
     [HttpPost]
     public async Task<ActionResult<Site>> CreateSite([FromBody] SiteRequest siteRequest)
     {
@@ -77,9 +73,7 @@ public sealed class SiteController(
 
     /// <summary>
     /// Updates a Site's settings and Scraper. Without a script, the Site keeps its current one.
-    /// Requires the admin token.
     /// </summary>
-    [Authorize(Policy = AdminToken.PolicyName)]
     [HttpPut("{id}")]
     public async Task<ActionResult<Site>> UpdateSite(
         [FromRoute] int id,
@@ -151,9 +145,8 @@ public sealed class SiteController(
 
     /// <summary>
     /// Starts a Test Run of an unsaved Scraper and Site settings. The result is sent to the given
-    /// SignalR connection only, as OnTestRunCompleted. Requires the admin token.
+    /// SignalR connection only, as OnTestRunCompleted.
     /// </summary>
-    [Authorize(Policy = AdminToken.PolicyName)]
     [HttpPost("test-run")]
     public ActionResult StartTestRun([FromBody] TestRunRequest testRunRequest)
     {
