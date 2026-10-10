@@ -68,11 +68,14 @@ export const VpnStore = signalStore(
         )
         .subscribe();
 
+      // The VPN may not be reachable (for example in local development); pages fall back to IDs.
       void store._controller.getCurrentLocation()
-        .then(currLoc => { store._updateCurrentLocation(currLoc); });
+        .then(currLoc => { store._updateCurrentLocation(currLoc); })
+        .catch((error: unknown) => { console.warn('Could not load the current VPN Location.', error); });
 
       void store._controller.getAllLocations()
-        .then(allLocs => { store._upsertLocations(allLocs); });
+        .then(allLocs => { store._upsertLocations(allLocs); })
+        .catch((error: unknown) => { console.warn('Could not load the VPN Locations.', error); });
     },
   })
 );

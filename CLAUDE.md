@@ -15,8 +15,8 @@ dotnet build --configuration Release --no-restore
 
 # Backend tests (MSTest v4 on Microsoft.Testing.Platform)
 dotnet test
-dotnet test --project test/Backend.Test/Backend.Test.csproj
-dotnet test --project test/Backend.Test/Backend.Test.csproj --filter "FullyQualifiedName~RunNext"
+dotnet test --project test/Backend.IntegrationTests/Backend.IntegrationTests.csproj
+dotnet test --project test/Backend.IntegrationTests/Backend.IntegrationTests.csproj --filter "FullyQualifiedName~RunNext"
 
 # Run the backend (needs Browserless containers or local Playwright; see docs/local-development.md)
 cd src/Backend && dotnet run
@@ -27,6 +27,9 @@ npm start                       # ng serve over HTTPS using the ASP.NET dev cert
 npm run lint
 npx ng test --watch=false
 npx ng test --watch=false --include src/app/components/site-list/site-list.spec.ts
+
+# The script contract package (published by .github/workflows/release.yml on a v* tag)
+dotnet pack src/Scripting -c Release -p:Version=0.1.0
 
 # EF Core migrations (run from src/Database; dotnet-ef is in the local tool manifest)
 dotnet tool restore
@@ -40,34 +43,37 @@ Build notes:
 - Building `src/Backend` also builds the Angular app (an `AfterTargets="Build"` step in `Backend.csproj`) and regenerates `src/Frontend/src/app/generated/model.ts`. Node/npm must be available.
 - Package versions are central in `Directory.Packages.props`, and every project has a `packages.lock.json`. CI restores with `--locked-mode`, so commit lock file changes along with version bumps.
 - The frontend specs are untouched Angular scaffolding and currently fail (missing providers). CI only runs the backend tests.
+- `samples/DemoScrapers` builds with the solution, so CI compiles the demo scripts against the contract. The Backend embeds those same files for `DemoDataSeeder`.
 
 ## Architecture
 
 Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VPN, notifiers, code generators), `src/Database` (EF Core models, `SiteCheckerDbContext`, migrations, change interceptor), `src/Scraper` (Playwright scraping library), `src/Utilities`, `src/Frontend` (Angular SPA), and `src/LocalPlaywright` (a local Playwright server for development without Docker). Tests live in `test/`.
 
 ### Site Check lifecycle
-- `Services/CheckQueue/SiteCheckRunner` owns every Site Check status change: deciding which Sites are due by Schedule, accepting requests (`RequestCheckAsync` returns the Site's open check if one exists), claiming and running checks (Queued → Checking → Done/Failed), and re-queuing orphaned `Checking` checks (after a restart or a failed save) each time it looks for work.
+- `Services/CheckQueue/SiteCheckRunner` owns every Site Check status change: deciding which Sites are due by Schedule, accepting requests (`RequestCheckAsync` returns the Site's open check if one exists), claiming and running checks (Queued → Checking → Succeeded/Failed), and re-queuing orphaned `Checking` checks (after a restart or a failed save) each time it looks for work.
 - **The database is the queue** (ADR 0001): pending work is every Site Check with status `Queued`. The in-memory channel only wakes the runner and holds no state.
 - `SiteCheckTimer` and `SiteCheckQueueProcessor` are thin `BackgroundService` loops that call the runner. Keep logic out of them, and create or run Site Checks through the runner, never by writing `SiteCheck` rows directly.
 - Checks run one at a time, because rotating the VPN Location restarts the shared Browserless VPN container. Orphan recovery depends on this: any `Checking` row found between checks is assumed abandoned.
+- The runner's **scrape lock** covers everything that uses the shared browser and VPN containers: resolving and rotating the VPN Location, scraping, Test Runs (`RunTestAsync`), and manual location changes (`ChangeVpnLocationAsync`, which `VpnController` calls). Don't call `PiaService.ChangeLocationAsync` directly.
+- **Requested Actions** of a Known Failure are carried out by the runner when it records the outcome, and only the ones carried out are recorded in `SiteCheck.RequestedActions`. Retry queues a new check in the same save, once per Failing Run. Change VPN Location (VPN-routed checks only) excludes the failed location in `PiaService` and rotates before the next VPN-routed check if that location is still current.
 
 ### Save interceptor and SignalR
 `Database/ChangesInterceptor` runs on every `SaveChanges` and passes the created, updated and deleted entities to each registered `IEntityChangeService`. Today that's only `EntityChangesService`, which broadcasts them to SignalR clients. **Never push SignalR entity events manually after a save.** Note that `ExecuteUpdate`/`ExecuteDelete` skip the interceptor, so they broadcast nothing.
 
 ### Notifications
 - `SiteCheckRunner` calls `NotifierService.NotifyAsync(siteCheckId)` after saving each outcome (ADR 0002); notifications do **not** hang off the save interceptor. `NotifierService` is the single dispatch path and never throws for a notification problem.
-- The policy (terms in `GLOSSARY.md`): a Done check notifies **Updated** when its content differs from the previous Done check (a Site's first Done is only a baseline). A **Failing Run** is reported once, on its first unexpected failure or when its Known Failures reach the Site's `KnownFailuresThreshold`. A Done check ending a reported run notifies **Recovered** (or **Recovered and Updated**). A run counts as reported only once its Failing notification reached a channel (`SiteCheck.ReportedAt`); until then each failure retries. History is ordered by completion (`DoneDate`, then `Id`). Empty Checks never notify but end a Failing Run.
+- The policy (terms in `GLOSSARY.md`): a Succeeded check notifies **Updated** when its content differs from the Baseline (a Site's first Succeeded check only sets the Baseline). A **Failing Run** is reported once, on its first Unexpected Failure or when its Known Failures reach the Site's `KnownFailuresThreshold`. A Succeeded check ending a reported run notifies **Recovered** (or **Recovered and Updated**). A run counts as reported only once its Failing notification reached a channel (`SiteCheck.ReportedAt`); until then each failure retries. History is ordered by completion (`CompletedDate`, then `Id`). A Baseline Reset never notifies but ends a Failing Run.
 - Channels implement `Notifiers/INotificationChannel`: the notifier decides *whether* and which of the Site's settings apply (`Notification.Settings`: Recoveries use failure settings, Recovered and Updated falls back to success), and each channel decides *how*. `SendAsync` returns whether it delivered (`false` when the Site has it off) and must throw on delivery failure. `PushoverChannel` and `DiscordChannel` are registered only when configured. Pushover Emergency alerts carry `retry`/`expire`; Emergency Recoveries are sent at High.
 
 ### Scrapers and Sites
-- A scraper is a class deriving `ScraperBase` in `src/Scraper/Scrapers/` (override `Id`, `Url`, `DoScrapeAsync`), registered with `AddScraper<T>()` in `AddScraperServices()` (`ScraperService.cs`). `Site.ScraperId` selects it at runtime.
-- **Sites are defined in code.** `Backend/Services/DataSeeder.cs` seeds one Site per scraper at startup and **deletes any Site whose `ScraperId` isn't in its list**, so a new scraper needs a seeded Site there. (The scraper example in `README.md` predates the current `ScraperBase` API.)
-- `ScraperBase` turns exceptions into `FailureScrapeResult`s, takes screenshots on failure (or always, per Site), and writes HTML and exception dumps to `site-checker/logs`. `KnownScraperException` subclasses (access denied, blank page) mark Known Failures.
-- `ScraperService.GetBrowserType` picks the browser: `USE_LOCAL_BROWSER` → local Playwright, otherwise Browserless or Browserless VPN, depending on `Site.UseVpn` and which URLs are configured.
+- **Sites and their Scrapers are data** (ADR 0003). `Site.Scraper` is a flat `ScraperDefinition` (a `Kind` plus one nullable payload per kind) in a JSON column. Stage 1 has only Script Scrapers: an uploaded C# file whose metadata is in `Scraper.Script` and whose source is in its own `SiteScript` row. `SiteScript` deliberately isn't an `IEntityWithId`, so the save interceptor never broadcasts it.
+- **One pipeline runs every Scraper** (`src/Scraper/ScraperService.cs`). It opens the browser (`Browsers/BrowserProvider`, which also picks the `BrowserType`), navigates to `Site.Url`, and passes the navigation result to the `IScrapeExecutor` for the request's `ScraperSpec` type, under the Site's timeout (`ScrapeTimeouts`). Navigation errors reach the Scraper rather than failing the scrape (ADR 0005). The pipeline also takes the screenshot (on failure, or always per Site) and writes failure dumps (`FailureArtifacts`) under a separate 10 s budget, and converts every exception into an Unexpected Failure. `ScrapeResult` is Succeeded, a Known Failure (with Requested Actions), or an Unexpected Failure.
+- **Scripts** compile against the `SiteChecker.Scripting` contract (`src/Scripting`: `IScript`, `ScriptContext`, `ScriptOutcome`, `RequestedAction`) with `ScriptCompiler` (Roslyn, fixed global usings, into a collectible load context), cached per Site by source hash in `ScriptCache` (ADR 0004). The runtime compiler is the source of truth: `samples/DemoScrapers` mirrors its settings, and `Scraper.IntegrationTests` compiles every demo script with it.
+- `DemoDataSeeder` seeds the two demo Sites (scripts embedded from `samples/DemoScrapers`) only into a database with no Sites, when `SEED_DEMO_DATA` is on (default: Development only). It never updates or deletes.
 
 ### Type bridge (C# → TypeScript)
 - `Backend/Generators/ReinforcedTypingsConfiguration.cs` generates `src/Frontend/src/app/generated/model.ts` at build time. It contains Zod schemas plus inferred TypeScript types for models and enums, an injectable Angular client class per API controller (every `ControllerBase` in `SiteChecker.Backend.Controllers`, so the frontend calls e.g. `SiteCheckController.createSiteCheck()`), and `SignalRConstants`.
-- **Never hand-edit `model.ts`.** A new property on an exported model appears after a rebuild, but a **new model or enum type must be added to the lists in `ReinforcedTypingsConfiguration`**. XML doc comments on controller actions are copied into the generated client.
+- **Never hand-edit `model.ts`.** A new property on an exported model appears after a rebuild, but a **new model or enum type must be added to the lists in `ReinforcedTypingsConfiguration`**. XML doc comments on controller actions are copied into the generated client. Responses are validated with the return type's Zod schema, except for void actions (`ActionResult`), whose empty body isn't parsed.
 - Enums are serialized as strings (`JsonStringEnumConverter`). `CheckStatus` values are pinned because they're stored as integers.
 
 ### Frontend
@@ -87,10 +93,14 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 
 ### Testing
 - Use MSTest v4 only (no xUnit, NUnit, or Jest). The MSTest analyzers run in `Recommended` mode with warnings as errors, so use the specific asserts (`Assert.HasCount`, `Assert.ContainsSingle`, `Assert.IsEmpty`) and pass `TestContext.CancellationToken`.
-- `test/Backend.Test` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF.
+- Test projects are split by category, and the name says which: `*.UnitTests` (fast, no database or Roslyn) and `*.IntegrationTests` (real SQLite, real compilation). Both run in CI.
+- `test/Backend.IntegrationTests` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` (in `test/Backend.UnitTests`) cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF. `harness.Vpn` fakes the VPN containers under the real `PiaService`.
+- API tests use `SiteApiFactory` (`WebApplicationFactory<Program>`): the real app over in-memory SQLite, with demo data off, the app's background services removed, and a fake `IScraperService`.
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.
+- `SCRAPE_TIMEOUT` (seconds, default 120) is the default Site timeout. `BROWSERLESS_TIMEOUT` (ms, default 180000) is passed to Browserless as `TIMEOUT` too, and every timeout must leave 10 s under it (`ScrapeTimeouts`; startup fails otherwise). `SEED_DEMO_DATA` turns the demo Sites on or off (default: Development only).
+- **Trust boundary** (ADR 0004): scripts run unsandboxed in the app, which has no authentication and mounts the Docker socket. Anyone who can reach the app can run code on the host, so it must stay on trusted networks. Don't add features that assume otherwise.
 
 ## Microsoft documentation
 

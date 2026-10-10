@@ -3,6 +3,8 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, model } f
 import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
 import { ScreenshotStore } from '../../services/screenshot.store';
 import { SiteCheckStore } from '../../services/site-check.store';
+import { VpnStore } from '../../services/vpn.store';
+import { requestedActionLabel, vpnLocationLabel } from '../../utilities/labels';
 
 @Component({
   selector: 'app-site-check-details',
@@ -14,12 +16,19 @@ import { SiteCheckStore } from '../../services/site-check.store';
 export class SiteCheckDetails {
   private readonly _siteCheckStore = inject(SiteCheckStore);
   private readonly _screenshotStore = inject(ScreenshotStore);
+  private readonly _vpnStore = inject(VpnStore);
   protected readonly activeModal = inject(NgbActiveModal);
+  protected readonly requestedActionLabel = requestedActionLabel;
   public readonly siteCheckId = model<number>();
 
   protected readonly siteCheck = computed(() => {
     return this._siteCheckStore.entities()
       .find(sc => sc.id === this.siteCheckId());
+  });
+
+  protected readonly vpnLocation = computed(() => {
+    const sc = this.siteCheck();
+    return sc ? vpnLocationLabel(sc.vpnLocationId, this._vpnStore.entityMap()) : '';
   });
 
   protected readonly screenshot = computed(() => {

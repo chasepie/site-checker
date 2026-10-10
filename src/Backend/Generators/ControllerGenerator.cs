@@ -36,19 +36,15 @@ public class ControllerGenerator : ClassCodeGenerator
     {
         var method = classType.GetMethod(func.Identifier.IdentifierName)!;
         var returnType = method.ReturnType;
-        var typeName = string.Empty;
 
-        while (returnType.Name.Contains(nameof(Task))
-            || (
-                returnType.FullName?.Contains(nameof(ActionResult)) == true
-                && returnType.IsGenericType
-            ))
+        // Unwrap Task<T> and ActionResult<T>; a bare ActionResult resolves to "void".
+        while (returnType.IsGenericType
+            && (returnType.Name.Contains(nameof(Task)) || returnType.FullName?.Contains(nameof(ActionResult)) == true))
         {
             returnType = returnType.GetGenericArguments()[0];
-            typeName = typeResolver.ResolveTypeName(returnType).ToString() ?? "any";
         }
 
-        return typeName;
+        return typeResolver.ResolveTypeName(returnType).ToString() ?? "any";
     }
 
     private static string GetHttpMethod(RtFunction func, Type classType)
@@ -105,18 +101,22 @@ public class ControllerGenerator : ClassCodeGenerator
         sb.AppendLine($"\t\tbody: {BuildBodyParam(func, classType)}");
         sb.AppendLine("\t}");
         sb.AppendLine(");");
-        sb.AppendLine("const result = await lastValueFrom(obs$);");
 
-        var returnType = GetReturnType(func, classType, resolver)
+        var returnType = GetReturnType(func, classType, resolver);
+        if (returnType == "void")
+        {
+            // No body to validate: Angular returns null for an empty response, which z.void() rejects.
+            sb.Append("await lastValueFrom(obs$);");
+            func.Body = new RtRaw(sb.ToString());
+            return;
+        }
+
+        var schema = returnType
             .Replace("[]", ".array()")
-            .Replace("void", "z.void()")
             .Replace("<", "(")
             .Replace(">", ")");
-
-        var returnPrefix = returnType.Contains("z.void()")
-            ? string.Empty
-            : "return ";
-        sb.Append($"{returnPrefix}{returnType}.parse(result);");
+        sb.AppendLine("const result = await lastValueFrom(obs$);");
+        sb.Append($"return {schema}.parse(result);");
         func.Body = new RtRaw(sb.ToString());
     }
 

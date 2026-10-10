@@ -1,7 +1,10 @@
 import { computed, effect, inject, resource } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { patchState, signalStore, withComputed, withHooks, withMethods, withProps, withState } from '@ngrx/signals';
+import { filter } from 'rxjs';
 import { Site, SiteCheck, SiteCheckController } from '../generated/model';
 import { withCrudEntities } from './base.store';
+import { ScreenshotStore } from './screenshot.store';
 
 interface SiteCheckFilter {
   siteId?: number;
@@ -31,6 +34,7 @@ export const SiteCheckStore = signalStore(
 
   withProps(store => {
     const _controller = inject(SiteCheckController);
+    const _screenshotStore = inject(ScreenshotStore);
 
     const _resource = resource({
       params: () => ({ filter: store._getAllFilter() }),
@@ -50,6 +54,7 @@ export const SiteCheckStore = signalStore(
     return {
       _controller,
       _resource,
+      _screenshotStore,
     };
   }),
 
@@ -166,8 +171,20 @@ export const SiteCheckStore = signalStore(
       store._removeFromCache(toRemove);
     },
 
-    createEmptyCheck: async (siteId: number) => {
-      const newSiteCheck = await store._controller.createEmptyCheck(siteId);
+    /**
+     * Drops a deleted Site's checks and their screenshots. The database deletes them with the
+     * Site, so no one hears about them individually.
+     */
+    removeChecksForSite: (siteId: number) => {
+      const toRemove = store.entities()
+        .filter(c => c.siteId === siteId)
+        .map(c => c.id);
+      store._removeFromCache(toRemove);
+      store._screenshotStore.removeForSiteChecks(toRemove);
+    },
+
+    resetBaseline: async (siteId: number) => {
+      const newSiteCheck = await store._controller.resetBaseline(siteId);
       store._upsertInCache([newSiteCheck]);
     },
 
@@ -188,6 +205,16 @@ export const SiteCheckStore = signalStore(
 
   withHooks(store => ({
     onInit: () => {
+      // Another client deleted a Site: its checks went with it.
+      store._signalrService.entityDeleted$
+        .pipe(
+          takeUntilDestroyed(),
+          filter(change => change.entityTypeName === 'Site'),
+        )
+        .subscribe(change => {
+          store.removeChecksForSite(change.entityId);
+        });
+
       effect(() => {
         if (!store._resource.hasValue()) {
           return;

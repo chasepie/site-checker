@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Written the way a script author's project is: it exists for the IDE, and only the .cs files are
+    uploaded. The settings match the runtime compiler (ScriptCompiler): no implicit usings, the same
+    fixed global usings, nullable enabled. Scraper.IntegrationTests compiles each file with the
+    runtime compiler itself, which is the real guarantee.
+  -->
+  <PropertyGroup>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.Linq" />
+    <Using Include="System.Text.RegularExpressions" />
+    <Using Include="System.Threading" />
+    <Using Include="System.Threading.Tasks" />
+    <Using Include="Microsoft.Extensions.Logging" />
+    <Using Include="Microsoft.Playwright" />
+    <Using Include="SiteChecker.Scripting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Scripting/Scripting.csproj" />
+  </ItemGroup>
+
+</Project>

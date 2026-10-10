@@ -1,0 +1,302 @@
+<div class="editor-header">
+  <h2>{{ isNew() ? 'Create Site' : 'Edit ' + (site()?.name ?? 'Site') }}</h2>
+  <div class="editor-actions">
+    <button type="button" class="btn btn-secondary"
+            (click)="this.resetForm()">Undo</button>
+    <a class="btn btn-outline-secondary" routerLink="/">Cancel</a>
+    <button type="button" class="btn btn-primary"
+            (click)="save()" [disabled]="this.siteForm().submitting()">Save</button>
+  </div>
+</div>
+
+@if (!isNew() && !site()) {
+<p>Loading the Site…</p>
+} @else {
+
+@if (errors().length > 0) {
+<div class="alert alert-danger" role="alert">
+  <ul class="mb-0">
+    @for (error of errors(); track $index) {
+    <li>{{ error }}</li>
+    }
+  </ul>
+</div>
+}
+
+<div class="row g-4">
+  <form class="col-12 col-xl-6" novalidate>
+    <div class="row g-3">
+      <div class="col-12">
+        <label for="name" class="form-label">Name</label>
+        <input id="name" class="form-control" type="text"
+               [formField]="this.siteForm.name" appFormValid />
+        @if (this._isValidated()) {
+        <div class="invalid-feedback">
+          {{ this.siteForm.name().errors()[0]?.message }}
+        </div>
+        }
+      </div>
+
+      <div class="col-12">
+        <label for="url" class="form-label">URL</label>
+        <textarea id="url" class="form-control" rows="3"
+                  [formField]="this.siteForm.url" appFormValid>
+        </textarea>
+        <div class="form-text">The pipeline navigates here before the script runs.</div>
+        @if (this.siteForm.url().invalid() && this._isValidated()) {
+        <div class="invalid-feedback">
+          {{ this.siteForm.url().errors()[0]?.message }}
+        </div>
+        }
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body row g-3">
+        <div class="col-12">
+          <div class="form-check form-switch form-check-reverse">
+            <h5 class="form-check-label card-title" for="scheduleEnabled">Schedule</h5>
+            <input id="scheduleEnabled" class="form-check-input" type="checkbox"
+                   [formField]="this.siteForm.schedule.enabled" appFormValid />
+          </div>
+        </div>
+
+        <div class="col-6 col-sm-4">
+          <label for="scheduleStart" class="form-label">Start</label>
+          <input id="scheduleStart" class="form-control" type="time"
+                 [formField]="this.siteForm.schedule.start" appFormValid />
+        </div>
+
+        <div class="col-6 col-sm-4">
+          <label for="scheduleEnd" class="form-label">End</label>
+          <input id="scheduleEnd" class="form-control" type="time"
+                 [formField]="this.siteForm.schedule.end" appFormValid />
+        </div>
+
+        <div class="col-6 col-sm-4">
+          <label for="scheduleInterval" class="form-label">Interval</label>
+          <input id="scheduleInterval" class="form-control" type="number"
+                 [formField]="this.siteForm.schedule.interval" appFormValid />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body row g-3">
+        <h5 class="card-title">Options</h5>
+
+        <div class="col-12 col-sm-6">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="useVpn"
+                   [formField]="this.siteForm.useVpn">
+            <label class="form-check-label" for="useVpn">Use VPN</label>
+          </div>
+        </div>
+
+        <div class="col-12 col-sm-6">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="alwaysTakeScreenshot"
+                   [formField]="this.siteForm.alwaysTakeScreenshot">
+            <label class="form-check-label" for="alwaysTakeScreenshot">Always Take Screenshot</label>
+          </div>
+        </div>
+
+        <div class="col-12 col-sm-6">
+          <label for="timeoutSeconds" class="form-label">Timeout (seconds)</label>
+          <input id="timeoutSeconds" class="form-control" type="text" inputmode="numeric"
+                 placeholder="Default" [formField]="this.siteForm.timeoutSeconds" appFormValid />
+          <div class="form-text">Blank uses <code>SCRAPE_TIMEOUT</code>.</div>
+          @if (this._isValidated()) {
+          <div class="invalid-feedback">
+            {{ this.siteForm.timeoutSeconds().errors()[0]?.message }}
+          </div>
+          }
+        </div>
+
+        <div class="col-12 col-sm-6">
+          <label for="knownFailuresThreshold" class="form-label">Known Failures Threshold</label>
+          <input id="knownFailuresThreshold" class="form-control" type="number" appFormValid
+                 [formField]="this.siteForm.knownFailuresThreshold" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body row g-3">
+        <h5 class="card-title">Pushover</h5>
+
+        <div class="col-6">
+          <label for="successPriority" class="form-label">Success Priority</label>
+          <select id="successPriority" class="form-select" appFormValid
+                  [formField]="this.pushoverForm.successPriority">
+            @for (o of this.priorities; track $index) {
+            <option [value]="o.value">{{ o.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="col-6">
+          <label for="failurePriority" class="form-label">Failure Priority</label>
+          <select id="failurePriority" class="form-select" appFormValid
+                  [formField]="this.pushoverForm.failurePriority">
+            @for (o of this.priorities; track $index) {
+            <option [value]="o.value">{{ o.label }}</option>
+            }
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body row g-3">
+        <h5 class="card-title">Discord</h5>
+
+        <div class="col-6 col-lg-4">
+          <label for="successEnabled" class="form-label">Success</label>
+          <select id="successEnabled" class="form-select" appFormValid
+                  [formField]="this.discordForm.successEnabled">
+            @for (o of this.onOffOptions; track $index) {
+            <option [value]="o.value">{{ o.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="col-6 col-lg-4">
+          <label for="failureEnabled" class="form-label">Failure</label>
+          <select id="failureEnabled" class="form-select" appFormValid
+                  [formField]="this.discordForm.failureEnabled">
+            @for (o of this.onOffOptions; track $index) {
+            <option [value]="o.value">{{ o.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="col-12 col-lg-4">
+          <label for="discordChannelId" class="form-label">Discord Channel ID</label>
+          <input id="discordChannelId" class="form-control" type="text"
+                 [formField]="this.discordForm.channelId" appFormValid />
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <div class="col-12 col-xl-6">
+    <div class="card first">
+      <div class="card-body">
+        <h5 class="card-title">Script</h5>
+        <p class="form-text">
+          A C# file with one class that implements <code>IScript</code>, written against the
+          <code>SiteChecker.Scripting</code> contract. <code>samples/DemoScrapers</code> has examples.
+        </p>
+
+        <div class="script-file">
+          <label class="btn btn-outline-primary" for="scriptFile">
+            <i class="bi bi-upload"></i> {{ scriptFileName() ? 'Replace file' : 'Choose file' }}
+          </label>
+          <input id="scriptFile" type="file" accept=".cs" class="visually-hidden"
+                 (change)="onScriptSelected($event)" />
+
+          @if (scriptFileName(); as fileName) {
+          <span class="file-name"><i class="bi bi-file-earmark-code"></i> {{ fileName }}</span>
+          @if (upload()) {
+          <span class="badge text-bg-warning">Not saved</span>
+          } @else if (uploadedAt(); as uploadedAt) {
+          <span class="form-text m-0">Uploaded {{ uploadedAt | date: 'medium' }}</span>
+          }
+          <button type="button" class="btn btn-sm btn-link"
+                  (click)="downloadScript()" [disabled]="scriptSource() === null">
+            <i class="bi bi-download"></i> Download
+          </button>
+          } @else {
+          <span class="form-text m-0">No script yet</span>
+          }
+        </div>
+
+        @if (diagnostics().length > 0) {
+        <div class="alert alert-danger diagnostics" role="alert">
+          <strong>The script doesn't compile</strong>
+          <ul class="mb-0">
+            @for (d of diagnostics(); track $index) {
+            <li><code>{{ d.fileName }}({{ d.line }},{{ d.column }})</code> {{ d.id }}: {{ d.message }}</li>
+            }
+          </ul>
+        </div>
+        }
+
+        @if (scriptSource(); as source) {
+        <pre class="source"><code>{{ source }}</code></pre>
+        }
+      </div>
+    </div>
+
+    @let run = testRun();
+    <div class="card">
+      <div class="card-body">
+        <div class="card-title-row">
+          <h5 class="card-title">Test Run</h5>
+          @if (run.status === 'running') {
+          <button type="button" class="btn btn-sm btn-outline-secondary"
+                  (click)="stopWaitingForTestRun()">Stop waiting</button>
+          } @else {
+          <button type="button" class="btn btn-sm btn-outline-primary"
+                  (click)="runTest()" [disabled]="scriptSource() === null">
+            <i class="bi bi-play-fill"></i> Run test
+          </button>
+          }
+        </div>
+        <p class="form-text">
+          Runs the script and settings on this page, saved or not, after any running check.
+          Nothing is recorded or notified, and Requested Actions aren't carried out.
+        </p>
+
+        @if (run.status === 'running') {
+        <div class="test-running">
+          <div class="spinner-border spinner-border-sm" role="status"></div>
+          <span>Running…</span>
+        </div>
+        } @else if (run.status === 'error') {
+        <div class="alert alert-warning mb-0" role="alert">{{ run.message }}</div>
+        } @else if (run.status === 'done') {
+        <div class="test-result">
+          <div class="test-result-summary">
+            <span class="badge"
+                  [class.text-bg-success]="run.result.outcome === 'Succeeded'"
+                  [class.text-bg-warning]="run.result.outcome === 'KnownFailure'"
+                  [class.text-bg-danger]="run.result.outcome === 'UnexpectedFailure'">
+              {{ scrapeOutcomeLabel(run.result.outcome) }}
+            </span>
+            <span class="form-text m-0">in {{ run.result.durationMilliseconds / 1000 | number: '1.1-1' }} s</span>
+            @for (action of run.result.requestedActions; track action) {
+            <span class="badge text-bg-secondary">Requests {{ requestedActionLabel(action) }}</span>
+            }
+          </div>
+
+          @if (run.result.content !== null) {
+          <h6>Content</h6>
+          <pre><code>{{ run.result.content }}</code></pre>
+          }
+
+          @if (run.result.message) {
+          <h6>Message</h6>
+          <pre><code>{{ run.result.message }}</code></pre>
+          }
+
+          @if (run.result.diagnostics.length > 0) {
+          <ul>
+            @for (d of run.result.diagnostics; track $index) {
+            <li><code>{{ d.fileName }}({{ d.line }},{{ d.column }})</code> {{ d.id }}: {{ d.message }}</li>
+            }
+          </ul>
+          }
+
+          @if (testRunScreenshot(); as screenshot) {
+          <h6>Screenshot</h6>
+          <img [src]="screenshot" alt="Screenshot from the Test Run" class="img-fluid screenshot" />
+          }
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>
+}

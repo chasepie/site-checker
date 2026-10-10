@@ -14,10 +14,15 @@ services:
       - BROWSERLESS_URL=ws://browserless:3000
       - BROWSERLESS_URL_VPN=ws://vpn:3000
       - VPN_CHANGE_INTERVAL=10
+      # Read by the app and passed to both Browserless containers as TIMEOUT, so they can't drift.
+      - BROWSERLESS_TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
     volumes:
       - ./site-checker/data:/app/data
       - ./site-checker/logs:/app/logs
       - ./site-checker/pia:/pia
+      # For VPN rotation. Uploaded scripts run inside this container, and :ro doesn't restrict API
+      # calls on the socket, so anyone who can reach the app can control the host. Keep the app on
+      # trusted networks only (see docs/configuration.md, "Trust boundary").
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       - browserless
@@ -32,7 +37,7 @@ services:
     environment:
       - TZ=America/New_York
       - TOKEN=${BROWSERLESS_TOKEN}
-      - TIMEOUT=180000
+      - TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
 
   browserless-vpn:
     image: ghcr.io/browserless/chromium:latest
@@ -41,7 +46,7 @@ services:
     environment:
       - TZ=America/New_York
       - TOKEN=${BROWSERLESS_TOKEN}
-      - TIMEOUT=180000
+      - TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
     network_mode: "service:vpn"
     depends_on:
       vpn:

@@ -17,6 +17,8 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 ## Features
 
 - **Automated Web Scraping** — Monitor websites for availability and content changes via Playwright browser automation
+- **Sites as Data** — Create, edit, test-run and delete Sites in the dashboard; each Site's scraping logic is an uploaded C# script, compiled at runtime, so adding one needs no rebuild or redeploy
+- **Known Failures** — Scripts can recognise states like access denied or a blocked VPN Location, and ask for another VPN Location or a retry
 - **VPN-Routed Scraping** — Scrape location-specific content through Private Internet Access (PIA) VPN integration with automatic location rotation to reduce bot detection
 - **Real-time Notifications** — Alerts via Pushover and Discord when changes are detected
 - **Live Dashboard** — WebSocket-based real-time updates using SignalR
@@ -47,7 +49,8 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 - **Backend** — ASP.NET Core API server with controllers, services, and VPN management
 - **Database** — EF Core models, migrations, and services using SQLite
 - **Frontend** — Angular 21 SPA for monitoring and managing site checks
-- **Scraper** — Reusable Playwright-based scraping library
+- **Scraper** — The shared scrape pipeline (browser, navigation, timeout, screenshots) and the runtime script compiler
+- **Scripting** — `SiteChecker.Scripting`, the contract scripts compile against, published as a NuGet package
 - **Notifiers** — Pushover and Discord notification implementations
 
 ## Quick Start
@@ -94,36 +97,39 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 
 ## Development
 
-### Creating a New Scraper
+### Adding a Site
 
-1. Create a class inheriting from `ScraperBase`:
+Sites are created in the dashboard (**New Site**). Each Site has a URL and a script: a single C# file
+with one class that implements `IScript`. The app navigates to the Site's URL, then runs the script on
+the loaded page:
 
 ```csharp
-public class ExampleScraper(ILogger<ExampleScraper> logger)
-    : ScraperBase(logger, ExampleScraper.ScraperId, ExampleScraper.DefaultUrl)
+public sealed class Example : IScript
 {
-    public const string ScraperId = "example-scraper";
-    public const string DefaultUrl = "https://example.com";
-
-    protected override async Task<ScrapeResult> DoScrapeAsync(IPage page, ScrapeRequest request)
+    public async Task<ScriptOutcome> RunAsync(ScriptContext ctx)
     {
-        request.LogInfo(_logger, "Starting scrape");
+        if (ctx.Navigation.Response?.Status is 403 or 429)
+        {
+            return ScriptOutcome.KnownFailure("Blocked", RequestedAction.ChangeVpnLocation, RequestedAction.Retry);
+        }
+        ctx.Navigation.EnsureSucceeded();
 
-        var locator = await page.WaitForFirstLocatorAsync([
-            page.Locator("selector1"),
-            page.Locator("selector2")
-        ]);
-
-        var text = await locator.TextContentAsync();
-
-        return new ScrapeResult { IsSuccess = true, Content = text };
+        var price = await ctx.Page.Locator(".price").TextContentAsync();
+        return price?.Trim() ?? "[no price]";
     }
 }
 ```
 
-2. Register it by calling `services.AddScraper<ExampleScraper>()` inside `AddScraperServices()` in `src/Scraper/ScraperService.cs`.
+Choose the `.cs` file in the Site editor, use **Run test** to try it against the live page, and save.
+[samples/DemoScrapers](samples/DemoScrapers/README.md) has the full guide, the rules the runtime compiler
+enforces, and how to set up an authoring project with the `SiteChecker.Scripting` package.
 
-3. Add an entry in `DataSeeder.cs` to seed the initial site record.
+## Security
+
+Site Checker has no authentication, and uploaded scripts run inside the app with access to the Docker
+socket. **Anyone who can reach the app can run code on its host**, so only expose it to trusted
+networks (a home LAN, a private VPN like Tailscale), never to the internet. See
+[docs/configuration.md](docs/configuration.md#trust-boundary).
 
 ## Technology Stack
 
@@ -148,8 +154,8 @@ public class ExampleScraper(ILogger<ExampleScraper> logger)
 - WireGuard VPN (PIA)
 
 ## What's Next
-- Add a no-code scraper builder — define CSS selectors, wait conditions, and interactions (clicks, scrolls) directly in the dashboard without writing a custom scraper class for less complicated checks
-- Add support for prompt-based AI-powered web scraping using services like ChatGPT, Claude, or Ollama
+- Add a no-code scraper builder — define CSS selectors, wait conditions, and interactions (clicks, scrolls) directly in the dashboard without writing a script for less complicated checks ([design 0002](docs/design/0002-steps-scrapers.md))
+- Add support for prompt-based AI-powered web scraping using services like ChatGPT, Claude, or Ollama ([design 0003](docs/design/0003-prompt-scrapers.md))
 
 ## Acknowledgments
 

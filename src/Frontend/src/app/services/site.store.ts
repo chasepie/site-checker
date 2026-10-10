@@ -3,7 +3,7 @@ import {
   patchState, signalStore, withComputed, withHooks,
   withMethods, withProps, withState
 } from '@ngrx/signals';
-import { Site, SiteController, SiteUpdate } from '../generated/model';
+import { Site, SiteController, SiteRequest } from '../generated/model';
 import { withCrudEntities } from './base.store';
 import { sitecheckSort, SiteCheckStore } from './site-check.store';
 
@@ -61,9 +61,27 @@ export const SiteStore = signalStore(
       patchState(store, { _selectedSiteId: site.id });
     },
 
-    updateSite: async (siteUpdate: SiteUpdate) => {
-      const updated = await store._controller.updateSite(siteUpdate.id, siteUpdate);
+    createSite: async (request: SiteRequest) => {
+      const created = await store._controller.createSite(request);
+      store._upsertInCache(created);
+      return created;
+    },
+
+    /** Without a script in the request, the Site keeps its current one. */
+    updateSite: async (id: number, request: SiteRequest) => {
+      const updated = await store._controller.updateSite(id, request);
       store._upsertInCache(updated);
+      return updated;
+    },
+
+    deleteSite: async (site: Site) => {
+      await store._controller.deleteSite(site.id);
+      // The delete broadcast skips this client, and never includes the Site's checks.
+      store._removeFromCache(site.id);
+      store._siteCheckStore.removeChecksForSite(site.id);
+      if (store._selectedSiteId() === site.id) {
+        patchState(store, { _selectedSiteId: undefined });
+      }
     },
   })),
 

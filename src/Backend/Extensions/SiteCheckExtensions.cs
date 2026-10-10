@@ -1,6 +1,5 @@
 using SiteChecker.Database.Model;
 using SiteChecker.Scraper;
-using SiteChecker.Scraper.Exceptions;
 
 namespace SiteChecker.Backend.Extensions;
 
@@ -14,38 +13,47 @@ public static class SiteCheckExtensions
 
     extension(SiteCheck siteCheck)
     {
-        public void Update(IScrapeResult result, DateTime doneDate)
+        /// <summary>
+        /// Records a scrape's outcome. Requested Actions are recorded by the runner, which decides
+        /// which of them to carry out.
+        /// </summary>
+        public void Update(ScrapeResult result, DateTime completedDate)
         {
-            if (result.IsFailure(out var failure))
+            switch (result.Outcome)
             {
-                siteCheck.Status = CheckStatus.Failed;
-                siteCheck.Value = failure.ErrorMessage;
-                siteCheck.FailureKind = failure.Exception is KnownScraperException
-                    ? FailureKind.Known
-                    : FailureKind.Unexpected;
+                case ScrapeOutcome.Succeeded:
+                    siteCheck.Status = CheckStatus.Succeeded;
+                    siteCheck.Value = result.Content;
+                    siteCheck.FailureKind = null;
+                    break;
 
-                var exceptionType = failure.Exception?.GetType().FullName;
-                if (!string.IsNullOrEmpty(exceptionType))
-                {
-                    // Create a new dictionary to ensure EF Core detects the change
-                    siteCheck.Metadata = new(siteCheck.Metadata)
+                case ScrapeOutcome.KnownFailure:
+                    siteCheck.Status = CheckStatus.Failed;
+                    siteCheck.Value = result.Message;
+                    siteCheck.FailureKind = FailureKind.Known;
+                    break;
+
+                case ScrapeOutcome.UnexpectedFailure:
+                    siteCheck.Status = CheckStatus.Failed;
+                    siteCheck.Value = result.Message;
+                    siteCheck.FailureKind = FailureKind.Unexpected;
+
+                    var exceptionType = result.Exception?.GetType().FullName;
+                    if (!string.IsNullOrEmpty(exceptionType))
                     {
-                        [EXCEPTION_TYPE] = exceptionType
-                    };
-                }
-            }
-            else if (result.IsSuccess(out var success))
-            {
-                siteCheck.Status = CheckStatus.Done;
-                siteCheck.Value = success.Content;
-                siteCheck.FailureKind = null;
-            }
-            else
-            {
-                throw new InvalidOperationException("Unknown scrape result type");
+                        // Create a new dictionary to ensure EF Core detects the change
+                        siteCheck.Metadata = new(siteCheck.Metadata)
+                        {
+                            [EXCEPTION_TYPE] = exceptionType
+                        };
+                    }
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"Unknown scrape outcome {result.Outcome}");
             }
 
-            siteCheck.DoneDate = doneDate;
+            siteCheck.CompletedDate = completedDate;
         }
     }
 }

@@ -11,6 +11,7 @@ public class SiteCheckerDbContext : DbContext
     public DbSet<Site> Sites { get; set; }
     public DbSet<SiteCheck> SiteChecks { get; set; }
     public DbSet<SiteCheckScreenshot> SiteCheckScreenshots { get; set; }
+    public DbSet<SiteScript> SiteScripts { get; set; }
 
     private readonly IEnumerable<IEntityChangeService> _entityUpdateServices;
 
@@ -75,6 +76,22 @@ public class SiteCheckerDbContext : DbContext
 
         modelBuilder.Entity<Site>()
             .ComplexProperty(s => s.DiscordConfig, b => b.ToJson());
+
+        modelBuilder.Entity<Site>()
+            .ComplexProperty(s => s.Scraper, b =>
+            {
+                b.ToJson();
+                b.ComplexProperty(d => d.Script);
+            });
+
+        modelBuilder.Entity<SiteScript>(b =>
+        {
+            b.HasKey(s => s.SiteId);
+            b.HasOne(s => s.Site)
+                .WithOne(s => s.SiteScript)
+                .HasForeignKey<SiteScript>(s => s.SiteId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder.Entity<Site>()
             .Property(s => s.KnownFailuresThreshold)

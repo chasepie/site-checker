@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
@@ -8,6 +9,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Scraper.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Scripting/Scripting.csproj" />
     <ProjectReference Include="../Utilities/Utilities.csproj" />
   </ItemGroup>
 

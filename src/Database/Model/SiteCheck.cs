@@ -9,7 +9,7 @@ public enum CheckStatus
     // Values are pinned because they are persisted; 0 was the retired "Created" status.
     Queued = 1,
     Checking = 2,
-    Done = 3,
+    Succeeded = 3,
     Failed = 4,
 }
 
@@ -25,6 +25,19 @@ public enum FailureKind
     Known = 2,
 }
 
+/// <summary>
+/// Something a Known Failure asked the Site Check Runner to do, recorded on the Site Check once the
+/// runner did it. Values are pinned because they are persisted.
+/// </summary>
+public enum RequestedAction
+{
+    /// <summary>Exclude the VPN Location the check ran on, and move off it before the next VPN-routed check.</summary>
+    ChangeVpnLocation = 1,
+
+    /// <summary>Queue another Site Check for the Site instead of waiting for its Schedule.</summary>
+    Retry = 2,
+}
+
 // Serves the Site Check queue: the oldest Queued check (by StartDate, then Id) is claimed next.
 [Index(nameof(Status), nameof(StartDate))]
 public class SiteCheck : IEntityWithId
@@ -33,6 +46,9 @@ public class SiteCheck : IEntityWithId
 
     public required string? Value { get; set; }
 
+    /// <summary>
+    /// The ID of the VPN Location the check ran on, or <c>null</c> if it didn't use the VPN.
+    /// </summary>
     public string? VpnLocationId { get; set; }
 
     public CheckStatus Status { get; set; } = CheckStatus.Queued;
@@ -48,9 +64,15 @@ public class SiteCheck : IEntityWithId
     /// </summary>
     public DateTime? ReportedAt { get; set; }
 
+    /// <summary>
+    /// The Requested Actions the runner carried out for this check's Known Failure. A recorded
+    /// <see cref="RequestedAction.Retry"/> always means a retry was queued.
+    /// </summary>
+    public List<RequestedAction> RequestedActions { get; set; } = [];
+
     public required DateTime StartDate { get; set; }
 
-    public required DateTime? DoneDate { get; set; }
+    public required DateTime? CompletedDate { get; set; }
 
     public required int SiteId { get; set; }
 
@@ -61,10 +83,10 @@ public class SiteCheck : IEntityWithId
     public Site Site { get; set; } = null!;
 
     [JsonIgnore]
-    public bool IsSuccess => Status == CheckStatus.Done;
+    public bool IsSuccess => Status == CheckStatus.Succeeded;
 
     [JsonIgnore]
-    public bool IsComplete => Status == CheckStatus.Failed || Status == CheckStatus.Done;
+    public bool IsComplete => Status == CheckStatus.Failed || Status == CheckStatus.Succeeded;
 
     [JsonIgnore]
     public SiteCheckScreenshot? Screenshot { get; set; }
@@ -79,12 +101,12 @@ public class SiteCheck : IEntityWithId
         StartDate = startDate;
     }
 
-    public void Update(Exception ex, DateTime doneDate)
+    public void Update(Exception ex, DateTime completedDate)
     {
         Status = CheckStatus.Failed;
         FailureKind = Model.FailureKind.Unexpected;
         Value = ex.Message;
-        DoneDate = doneDate;
+        CompletedDate = completedDate;
     }
 }
 

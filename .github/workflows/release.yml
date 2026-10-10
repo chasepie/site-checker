@@ -1,0 +1,41 @@
+name: Release
+
+# Publishes the SiteChecker.Scripting contract to GitHub Packages when a version tag (v0.1.0, ...)
+# is pushed. The package version is the tag without its "v".
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish-scripting:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore NuGet Packages
+        run: dotnet restore src/Scripting --locked-mode
+
+      - name: Pack SiteChecker.Scripting
+        run: |
+          dotnet pack src/Scripting \
+            --configuration Release \
+            --no-restore \
+            --output out \
+            -p:Version="${GITHUB_REF_NAME#v}"
+
+      - name: Push to GitHub Packages
+        run: |
+          dotnet nuget push "out/*.nupkg" \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "${{ secrets.GITHUB_TOKEN }}"

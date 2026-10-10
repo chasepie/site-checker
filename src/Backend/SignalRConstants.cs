@@ -9,6 +9,7 @@ public class SignalRConstants
     public const string OnEntityDeletedKey = nameof(IEntityChangeService.OnEntityDeleted);
 
     public const string OnLocationChangedKey = "OnLocationChanged";
+    public const string OnTestRunCompletedKey = "OnTestRunCompleted";
     public const string UserID = "SiteChecker-SignalR-Id";
     public const string HubName = "dataHub";
 }

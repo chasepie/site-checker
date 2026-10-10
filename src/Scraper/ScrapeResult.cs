@@ -1,68 +1,77 @@
-using System.Diagnostics.CodeAnalysis;
-using SiteChecker.Scraper.Exceptions;
+using SiteChecker.Scraper.Scripts;
+using SiteChecker.Scripting;
 
 namespace SiteChecker.Scraper;
 
-public static class ExtenionMethods
+/// <summary>
+/// How a scrape ended. Values are pinned so they serialize the same way everywhere.
+/// </summary>
+public enum ScrapeOutcome
 {
-    extension(IScrapeResult result)
+    /// <summary>The Scraper produced content.</summary>
+    Succeeded = 1,
+
+    /// <summary>The Scraper recognised the state it found, such as access denied or a blank page.</summary>
+    KnownFailure = 2,
+
+    /// <summary>Anything the Scraper didn't recognise: an error, a timeout or a broken page.</summary>
+    UnexpectedFailure = 3,
+}
+
+/// <summary>
+/// The outcome of running a Scraper through the pipeline.
+/// </summary>
+public sealed record ScrapeResult
+{
+    public required ScrapeOutcome Outcome { get; init; }
+
+    /// <summary>
+    /// The Site's content, when the scrape <see cref="ScrapeOutcome.Succeeded"/>.
+    /// </summary>
+    public string? Content { get; init; }
+
+    /// <summary>
+    /// What went wrong, when the scrape failed.
+    /// </summary>
+    public string? Message { get; init; }
+
+    /// <summary>
+    /// What a Known Failure asks the Site Check Runner to do. An Unexpected Failure never carries any.
+    /// </summary>
+    public IReadOnlyList<RequestedAction> RequestedActions { get; init; } = [];
+
+    /// <summary>
+    /// The compile errors behind an Unexpected Failure, when the script didn't compile.
+    /// </summary>
+    public IReadOnlyList<ScriptDiagnostic> Diagnostics { get; init; } = [];
+
+    /// <summary>
+    /// The exception behind an Unexpected Failure, if there was one.
+    /// </summary>
+    public Exception? Exception { get; init; }
+
+    public byte[]? Screenshot { get; init; }
+
+    /// <summary>
+    /// How long the scrape took, from opening the browser to the last artifact.
+    /// </summary>
+    public TimeSpan Duration { get; init; }
+
+    public static ScrapeResult Succeeded(string content)
     {
-        public bool IsSuccess([NotNullWhen(true)] out SuccessScrapeResult? success)
-        {
-            success = null;
-            if (result.WasSuccessful && result is SuccessScrapeResult succ)
-            {
-                success = succ;
-            }
-
-            return success != null;
-        }
-
-        public bool IsFailure([NotNullWhen(true)] out FailureScrapeResult? failure)
-        {
-            failure = null;
-            if (!result.WasSuccessful && result is FailureScrapeResult fail)
-            {
-                failure = fail;
-            }
-
-            return failure != null;
-        }
+        ArgumentNullException.ThrowIfNull(content);
+        return new() { Outcome = ScrapeOutcome.Succeeded, Content = content };
     }
-}
 
-public interface IScrapeResult
-{
-    public bool WasSuccessful { get; }
-    public byte[]? Screenshot { get; set; }
-}
+    public static ScrapeResult KnownFailure(string message, IReadOnlyList<RequestedAction>? requestedActions = null)
+        => new() { Outcome = ScrapeOutcome.KnownFailure, Message = message, RequestedActions = requestedActions ?? [] };
 
-public class SuccessScrapeResult : IScrapeResult
-{
-    public bool WasSuccessful => true;
-    public byte[]? Screenshot { get; set; }
-    public required string Content { get; set; }
-}
+    public static ScrapeResult Unexpected(string message, Exception? exception = null)
+        => new() { Outcome = ScrapeOutcome.UnexpectedFailure, Message = message, Exception = exception };
 
-public class FailureScrapeResult : IScrapeResult
-{
-    public bool WasSuccessful => false;
-    public byte[]? Screenshot { get; set; }
-    public required string ErrorMessage { get; set; }
-    public ScraperException? Exception { get; set; }
-
-    public static FailureScrapeResult FromException(ScraperException ex)
+    public static ScrapeResult Unexpected(Exception exception)
     {
-        var message = ex.Message;
-        if (ex.InnerException != null)
-        {
-            message += $" | Inner Exception: {ex.InnerException.Message}";
-        }
-
-        return new FailureScrapeResult
-        {
-            ErrorMessage = message,
-            Exception = ex
-        };
+        ArgumentNullException.ThrowIfNull(exception);
+        return Unexpected(exception.Message, exception);
     }
 }
