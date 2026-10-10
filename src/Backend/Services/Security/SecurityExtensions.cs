@@ -116,7 +116,14 @@ public static class SecurityExtensions
                     .AddRequirements(new LoggedInRequirement())
                     .Build());
 
-            services.AddAntiforgery(options => options.HeaderName = AntiforgeryHeaderName);
+            services.AddAntiforgery(options =>
+            {
+                options.HeaderName = AntiforgeryHeaderName;
+                // Only the header, which another origin can't send without CORS. A page on this host
+                // but another port can read the XSRF-TOKEN cookie (cookies ignore ports), and a form
+                // field it could post without a preflight.
+                options.SuppressReadingTokenFromFormBody = true;
+            });
             services.Configure<MvcOptions>(options => options.Filters.Add<ValidateAntiforgeryFilter>());
 
             services.AddSingleton<LoginThrottle>();

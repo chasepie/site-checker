@@ -62,8 +62,9 @@ What's still exposed:
   meant for local development; the app warns at startup if it happens in a container.
 
 Everything except the login page, `/healthz` and the app's static files needs a login, including the
-live-update connection, which a logout closes. Writes also need an antiforgery token, and the
-live-update connection refuses pages on other hosts. `ALLOWED_HOSTS` stops web pages from reaching
+live-update connection, which a logout closes. Writes also need an antiforgery token, sent in a
+header, and the live-update connection refuses pages from other origins, including other apps on
+the same host at another port. `ALLOWED_HOSTS` stops web pages from reaching
 the app through DNS rebinding.
 
 Even so, keep the app on networks you trust, such as your home LAN or a private VPN like Tailscale.

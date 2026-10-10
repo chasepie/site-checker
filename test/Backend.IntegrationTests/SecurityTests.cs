@@ -147,6 +147,25 @@ public sealed class SecurityTests
     }
 
     [TestMethod]
+    public async Task Write_WithTheTokenInAFormField_IsRejected()
+    {
+        await using var factory = new SiteApiFactory();
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
+        var created = await client.PostAsJsonAsync("/api/site", SiteBody(), Ct);
+        var siteId = JsonNode.Parse(await created.Content.ReadAsStringAsync(Ct))!["id"]!.GetValue<int>();
+        var token = client.DefaultRequestHeaders.GetValues(SecurityExtensions.AntiforgeryHeaderName).Single();
+        client.DefaultRequestHeaders.Remove(SecurityExtensions.AntiforgeryHeaderName);
+
+        // What a page on this host at another port could post, having read the XSRF-TOKEN cookie.
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("__RequestVerificationToken", token)]);
+        var response = await client.PostAsync($"/api/site/{siteId}/check", form, Ct);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        await using var dbContext = factory.CreateDbContext();
+        Assert.IsFalse(dbContext.SiteChecks.Any(check => check.SiteId == siteId));
+    }
+
+    [TestMethod]
     public async Task Logout_EndsTheSession()
     {
         await using var factory = new SiteApiFactory();
@@ -496,6 +515,28 @@ public sealed class SecurityTests
         using var client = await factory.CreateLoggedInClientAsync(Ct);
         using var request = new HttpRequestMessage(HttpMethod.Post, NegotiatePath);
         request.Headers.Add("Origin", origin);
+
+        var response = await client.SendAsync(request, Ct);
+
+        Assert.AreEqual(expected, response.StatusCode);
+    }
+
+    [TestMethod]
+    [DataRow("same-origin", HttpStatusCode.OK)]
+    [DataRow("same-site", HttpStatusCode.Forbidden)]
+    [DataRow("cross-site", HttpStatusCode.Forbidden)]
+    [DataRow("none", HttpStatusCode.Forbidden)]
+    public async Task Hub_FromAnotherOrigin_IsForbidden_EvenOnAnAllowedHost(string fetchSite, HttpStatusCode expected)
+    {
+        await using var factory = new SiteApiFactory(settings: new Dictionary<string, string?>
+        {
+            [SecurityExtensions.AllowedHostsKey] = "sitechecker.lan",
+        });
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
+        using var request = new HttpRequestMessage(HttpMethod.Post, NegotiatePath);
+        // Another app on the same host: its Origin passes the host check, which ignores ports.
+        request.Headers.Add("Origin", "http://sitechecker.lan:9000");
+        request.Headers.Add("Sec-Fetch-Site", fetchSite);
 
         var response = await client.SendAsync(request, Ct);
 

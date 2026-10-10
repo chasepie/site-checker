@@ -5,19 +5,25 @@ using Microsoft.Extensions.Primitives;
 namespace SiteChecker.Backend.Services.Security;
 
 /// <summary>
-/// Refuses a browser's connection to a SignalR hub from a page on another host. WebSockets aren't
-/// covered by CORS, and the session cookie is <c>SameSite=Strict</c>, which still lets a page on a
-/// "same site" host (such as another Tailscale machine under <c>ts.net</c>) open the hub with it
-/// and read live data. Browsers always send <c>Origin</c> on these requests; a request without one
-/// isn't from a browser page, so it's left to the login.
+/// Refuses a browser's connection to a SignalR hub from a page with another origin. WebSockets
+/// aren't covered by CORS, and the session cookie is <c>SameSite=Strict</c>, which still lets a
+/// "same site" page open the hub with it and read live data: another Tailscale machine under
+/// <c>ts.net</c>, or another app on this host at another port, since cookies ignore ports.
+/// <para>
+/// Browsers send <c>Sec-Fetch-Site</c>, which they work out from the URLs they see, so it holds
+/// behind a proxy that rewrites the Host header. Where it's missing, the <c>Origin</c> host must
+/// be an allowed host, which can't tell ports apart. A request with neither isn't from a browser
+/// page, so it's left to the login.
+/// </para>
 /// </summary>
 public static class HubOriginCheck
 {
     extension(IApplicationBuilder app)
     {
         /// <summary>
-        /// Answers 403 to requests under <paramref name="hubPath"/> whose <c>Origin</c> host isn't
-        /// one of the allowed hosts. Does nothing while every host is allowed (Development).
+        /// Answers 403 to requests under <paramref name="hubPath"/> that a browser marks as not
+        /// <c>same-origin</c>, or whose <c>Origin</c> host isn't one of the allowed hosts. The
+        /// host check does nothing while every host is allowed (Development).
         /// </summary>
         public IApplicationBuilder UseHubOriginCheck(PathString hubPath)
         {
@@ -26,8 +32,10 @@ public static class HubOriginCheck
                 branch => branch.Use(async (context, next) =>
                 {
                     var allowedHosts = context.RequestServices.GetRequiredService<IOptions<HostFilteringOptions>>().Value.AllowedHosts;
+                    var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
                     var origin = context.Request.Headers.Origin.ToString();
-                    if (origin.Length > 0 && !IsAllowedOrigin(origin, allowedHosts))
+                    if ((fetchSite.Length > 0 && fetchSite != "same-origin")
+                        || (origin.Length > 0 && !IsAllowedOrigin(origin, allowedHosts)))
                     {
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
                         return;

@@ -5,9 +5,9 @@
 The whole app is behind a login with one password (`ADMIN_PASSWORD`) and no users. Logging in sets an HttpOnly, `SameSite=Strict` session cookie with a sliding lifetime of `SESSION_DAYS` (default 30). Its keys persist in the data directory, so restarts don't log you out. A fallback authorization policy requires the login on every endpoint, including the SignalR hub. The only exceptions are the login and session endpoints, `/healthz` and the SPA's static files.
 
 Around it:
-- Every controller write needs an antiforgery token. Angular's HttpClient sends it from the `XSRF-TOKEN` cookie. `SameSite=Strict` alone isn't enough, because hosts under a shared suffix such as `ts.net` count as the same site.
+- Every controller write needs an antiforgery token in the `X-XSRF-TOKEN` header. Angular's HttpClient sends it from the `XSRF-TOKEN` cookie. `SameSite=Strict` alone isn't enough, because hosts under a shared suffix such as `ts.net` count as the same site, and so does another app on this host at another port. That app can read the cookie, since cookies ignore ports, so the token is never accepted from a form field, which it could post without CORS.
 - Login attempts are limited to 5 a minute from each address and 30 from all of them, so another host can't lock you out by itself, and changing addresses doesn't buy more guesses. Only requests that can log in count, so a cross-site form post can't use them up. Behind a reverse proxy, the client's address comes from `X-Forwarded-For` only if the proxy is in `TRUSTED_PROXIES`.
-- The hub refuses pages on other hosts, since CORS doesn't cover WebSockets.
+- The hub refuses pages from other origins, since CORS doesn't cover WebSockets. It goes by the browser's `Sec-Fetch-Site`, which tells ports apart and holds behind a proxy, and otherwise by the `Origin` host.
 - A logout closes every hub connection, because SignalR keeps the login a connection started with.
 
 In Development without a password, login is off.
