@@ -1,6 +1,8 @@
 # Scripts run in an isolated Scrape Worker
 
 > Supersedes [ADR 0004](0004-scripts-run-in-process-behind-a-trust-boundary.md).
+>
+> **Amended by [ADR 0007](0007-a-single-user-login-with-cookie-sessions.md):** a login now replaces the admin token below, and covers the whole app.
 
 Script Scrapers run in the **Scrape Worker**, a container of their own, not in the app. The app sends each scrape over HTTP (`RemoteScraperService`, `SCRAPE_WORKER_URL`) and gets the `ScrapeResult` back. The pipeline writes nothing and the result carries everything, including the page's HTML and the Scraper's log. The worker:
 - holds no secrets but the Browserless token and its own secret (below)

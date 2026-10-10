@@ -34,7 +34,14 @@ Checked against Microsoft's ASP.NET Core 10 docs (SignalR authn/authz and securi
     - Log out went to `/login`, and the API answered 401 afterwards
     - ending the session from outside the page, with no navigation, sent it to `/login?returnUrl=/history` about 100 ms later
   - Not verified directly: a different browser whose session is still valid reconnecting after someone else logs out (the test browser's tabs share cookies).
-- [ ] 3. Compose, docs, ADR and a real-stack check
+- [x] 3. Compose, docs, ADR and a real-stack check
+  - ADR 0007 written; ADR 0006 marked as amended by it. Compose, `example.env`, `docs/configuration.md` (variables, trust boundary rewritten, upgrade note), `docs/local-development.md`, `README.md` and `CLAUDE.md` (login conventions: endpoints are private by default, writes need antiforgery, `AuthService` owns the hub) updated.
+  - Verified on the full stack with the real PIA VPN (throwaway `ADMIN_PASSWORD` and `SCRAPE_WORKER_SECRET` from the shell, scratch volumes):
+    - logged out, `/` went to `/login`, and `/api/site` answered 401; the login opened the dashboard
+    - Queue Check on the PIA Location Site ran through the worker and the VPN ("Seattle, United States"), and the row updated live from Checking to Succeeded
+    - after `docker restart site-checker`, the session still worked (keys in the data volume, written as UID 1654)
+    - Log out went to `/login`, and the API answered 401; no errors in the app's log
+  - 270 tests, Release build with 0 warnings, frontend lint clean.
 - [ ] Remove `PLAN.md`, then open the PR
 
 ## Decisions

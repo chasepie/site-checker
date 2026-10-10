@@ -8,7 +8,7 @@ namespace SiteChecker.Scraper;
 /// The secret the app sends to the Scrape Worker as <c>Authorization: Bearer {secret}</c>
 /// (<c>SCRAPE_WORKER_SECRET</c>). The worker runs whatever script a request carries, so without it,
 /// anything that can reach the worker (such as a page loaded in Browserless) could run code there
-/// without the admin token. Both sides require it outside Development.
+/// without logging in. Both sides require it outside Development.
 /// </summary>
 public static class ScrapeWorkerSecret
 {
