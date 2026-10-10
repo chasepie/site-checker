@@ -7,10 +7,5 @@
   "files.associations": {
     "*.esproj": "xml"
   },
-  "js/ts.tsdk.path": "src/Frontend/node_modules/typescript/lib",
-  "chat.useAgentSkills": true,
-  "chat.mcp.gallery.enabled": true,
-  "chat.tools.terminal.autoApprove": {
-    "dotnet test": true
-  }
+  "js/ts.tsdk.path": "src/Frontend/node_modules/typescript/lib"
 }
