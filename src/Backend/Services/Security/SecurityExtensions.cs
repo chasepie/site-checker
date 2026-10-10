@@ -11,6 +11,12 @@ public static class SecurityExtensions
     /// </summary>
     public const string AllowedHostsKey = "ALLOWED_HOSTS";
 
+    /// <summary>
+    /// The entries <c>HostFilteringMiddleware</c> treats as "allow any host". Any one of them in the
+    /// list turns filtering off, whatever else is listed.
+    /// </summary>
+    private static readonly string[] WildcardHosts = ["*", "0.0.0.0", "[::]"];
+
     extension(IServiceCollection services)
     {
         /// <summary>
@@ -34,7 +40,8 @@ public static class SecurityExtensions
         /// <summary>
         /// Restricts the Host headers the app accepts to <c>ALLOWED_HOSTS</c>, so a web page can't
         /// reach the API by rebinding its own domain to the app's address. Outside Development,
-        /// <c>ALLOWED_HOSTS</c> is required and can't be <c>*</c>.
+        /// <c>ALLOWED_HOSTS</c> is required and can't include a wildcard (<c>*</c>, <c>0.0.0.0</c> or
+        /// <c>[::]</c>).
         /// </summary>
         public IServiceCollection AddAllowedHosts()
         {
@@ -44,12 +51,12 @@ public static class SecurityExtensions
                 {
                     var hosts = (configuration[AllowedHostsKey] ?? string.Empty)
                         .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                    if (hosts.Length == 0 || hosts.Contains("*"))
+                    if (hosts.Length == 0 || hosts.Any(host => WildcardHosts.Contains(host)))
                     {
                         if (!environment.IsDevelopment())
                         {
                             throw new InvalidOperationException(
-                                $"{AllowedHostsKey} must list the host names the app is reached by, separated by semicolons (for example 'sitechecker.lan;sitechecker.tailnet.ts.net'), and can't be '*'.");
+                                $"{AllowedHostsKey} must list the host names the app is reached by, separated by semicolons (for example 'sitechecker.lan;sitechecker.tailnet.ts.net'), and can't include '*', '0.0.0.0' or '[::]', which allow any host.");
                         }
 
                         // Development keeps appsettings' AllowedHosts, which the host applies when

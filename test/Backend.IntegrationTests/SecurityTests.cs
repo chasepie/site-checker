@@ -137,6 +137,10 @@ public sealed class SecurityTests
     [DataRow(null)]
     [DataRow("*")]
     [DataRow("sitechecker.lan;*")]
+    [DataRow("0.0.0.0")]
+    [DataRow("[::]")]
+    [DataRow("sitechecker.lan;0.0.0.0")]
+    [DataRow("sitechecker.lan; [::]")]
     public async Task Production_WithoutSpecificAllowedHosts_FailsStartup(string? allowedHosts)
     {
         await using var factory = new SiteApiFactory(Environments.Production, new Dictionary<string, string?>
