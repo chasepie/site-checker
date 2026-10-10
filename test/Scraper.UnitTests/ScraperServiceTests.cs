@@ -1,6 +1,7 @@
 namespace SiteChecker.Scraper.UnitTests;
 
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Playwright;
 using NSubstitute;
@@ -8,6 +9,7 @@ using NSubstitute.ExceptionExtensions;
 using SiteChecker.Scraper;
 using SiteChecker.Scraper.Browsers;
 using SiteChecker.Scraper.Executors;
+using SiteChecker.Scraper.Scripts;
 using SiteChecker.Scripting;
 using BrowserType = SiteChecker.Scraper.BrowserType;
 
@@ -30,7 +32,8 @@ public sealed class ScraperServiceTests : IDisposable
     private readonly IBrowserProvider _browsers = Substitute.For<IBrowserProvider>();
     private readonly IResponse _response = Substitute.For<IResponse>();
     private readonly ManualResetEventSlim _releaseBlockedExecutors = new();
-    private string _logsDirectory = null!;
+    private readonly ScriptCache _scriptCache = new(Substitute.For<IScriptCompiler>());
+    private readonly IAbandonedRunMonitor _abandonedRuns = Substitute.For<IAbandonedRunMonitor>();
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -39,7 +42,6 @@ public sealed class ScraperServiceTests : IDisposable
     [TestInitialize]
     public void Initialize()
     {
-        _logsDirectory = Path.Combine(Path.GetTempPath(), $"site-checker-tests-{Guid.NewGuid():N}");
         _response.Ok.Returns(true);
         _response.Status.Returns(200);
         _page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions?>()).Returns(_response);
@@ -53,10 +55,7 @@ public sealed class ScraperServiceTests : IDisposable
     {
         _releaseBlockedExecutors.Set();
         _releaseBlockedExecutors.Dispose();
-        if (Directory.Exists(_logsDirectory))
-        {
-            Directory.Delete(_logsDirectory, recursive: true);
-        }
+        _scriptCache.Dispose();
     }
 
     /// <summary>
@@ -72,10 +71,12 @@ public sealed class ScraperServiceTests : IDisposable
     }
 
     private ScraperService CreateService(Func<ExecutorContext, Task<ScrapeResult>> execute) => new(
+        new BrowserSelector(new ConfigurationBuilder().Build()),
         _browsers,
         [new FakeExecutor(execute)],
+        _scriptCache,
         new ScrapeTimeouts(new ConfigurationBuilder().Build(), NullLogger<ScrapeTimeouts>.Instance),
-        new FailureArtifacts(NullLogger<FailureArtifacts>.Instance, _logsDirectory),
+        _abandonedRuns,
         TimeProvider.System,
         NullLogger<ScraperService>.Instance);
 
@@ -136,7 +137,7 @@ public sealed class ScraperServiceTests : IDisposable
     // ---- Failures ----
 
     [TestMethod]
-    public async Task ExecutorThatThrows_IsAnUnexpectedFailure_AndWritesTheDumps()
+    public async Task ExecutorThatThrows_IsAnUnexpectedFailure_WithTheExceptionAndPageHtml()
     {
         var service = CreateService(_ => throw new InvalidOperationException("selector not found"));
 
@@ -144,20 +145,66 @@ public sealed class ScraperServiceTests : IDisposable
 
         Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
         Assert.AreEqual("selector not found", result.Message);
-        Assert.IsInstanceOfType<InvalidOperationException>(result.Exception);
-        Assert.AreEqual("<html>page</html>", await File.ReadAllTextAsync(Path.Combine(_logsDirectory, "7_3.html"), Ct));
-        Assert.Contains("selector not found", await File.ReadAllTextAsync(Path.Combine(_logsDirectory, "7_3.log"), Ct));
+        Assert.AreEqual(typeof(InvalidOperationException).FullName, result.ExceptionType);
+        Assert.Contains("selector not found", result.ExceptionDetail!);
+        Assert.AreEqual("<html>page</html>", result.PageHtml);
     }
 
     [TestMethod]
-    public async Task TestRun_WritesNoDumps()
+    public async Task TestRun_CapturesNoPageHtml()
     {
         var service = CreateService(_ => throw new InvalidOperationException("selector not found"));
 
         var result = await service.ScrapeAsync(Request(siteCheckId: null), Ct);
 
         Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
-        Assert.IsFalse(Directory.Exists(_logsDirectory));
+        Assert.IsNull(result.PageHtml);
+        await _page.DidNotReceive().ContentAsync();
+    }
+
+    [TestMethod]
+    public async Task KnownFailure_CapturesNoPageHtml()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.KnownFailure("blocked")));
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        Assert.IsNull(result.PageHtml);
+    }
+
+    // ---- Logs ----
+
+    [TestMethod]
+    public async Task Logs_WrittenThroughTheContext_AreInTheResult()
+    {
+        var service = CreateService(ctx =>
+        {
+            var logger = ctx.Log.Wrap(NullLogger.Instance);
+            logger.LogInformation("found {Count} items", 3);
+            return Task.FromResult(ScrapeResult.Succeeded("content"));
+        });
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        var entry = Assert.ContainsSingle(result.Logs);
+        Assert.AreEqual(LogLevel.Information, entry.Level);
+        Assert.AreEqual("found 3 items", entry.Message);
+    }
+
+    [TestMethod]
+    public async Task Logs_BeforeATimeout_AreInTheResult()
+    {
+        var service = CreateService(async ctx =>
+        {
+            ctx.Log.Wrap(NullLogger.Instance).LogWarning("still waiting");
+            await Task.Delay(Timeout.Infinite, CancellationToken.None);
+            return ScrapeResult.Succeeded("unreachable");
+        });
+
+        var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        AssertTimedOut(result);
+        Assert.AreEqual("still waiting", Assert.ContainsSingle(result.Logs).Message);
     }
 
     [TestMethod]
@@ -210,6 +257,38 @@ public sealed class ScraperServiceTests : IDisposable
         var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
 
         AssertTimedOut(result);
+        _abandonedRuns.Received(1).Track(Arg.Any<Task>(), Arg.Is<ScrapeRequest>(r => r.SiteCheckId == 7));
+    }
+
+    [TestMethod]
+    public async Task Cancellation_ClosesTheBrowser_AndTracksARunThatIsStillGoing()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var started = new TaskCompletionSource();
+        var service = CreateService(_ =>
+        {
+            started.SetResult();
+            _releaseBlockedExecutors.Wait(Ct);
+            return Task.FromResult(ScrapeResult.Succeeded("too late"));
+        });
+
+        var scrape = service.ScrapeAsync(Request(), cancellation.Token);
+        await started.Task.WaitAsync(Ct);
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => scrape);
+        await _session.Received().CloseAsync();
+        _abandonedRuns.Received(1).Track(Arg.Any<Task>(), Arg.Is<ScrapeRequest>(r => r.SiteCheckId == 7));
+    }
+
+    [TestMethod]
+    public async Task RunThatEndsInTime_IsNotTrackedAsAbandoned()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));
+
+        await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        _abandonedRuns.DidNotReceiveWithAnyArgs().Track(default!, default!);
     }
 
     [TestMethod]

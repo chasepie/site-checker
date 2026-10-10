@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using SiteChecker.Backend.Notifiers;
 using SiteChecker.Backend.Services;
@@ -54,6 +55,12 @@ internal sealed class RunnerHarness : IAsyncDisposable
     public SaveFaultInterceptor SaveFaults { get; } = new();
 
     /// <summary>
+    /// Where the runner writes failure dumps; deleted with the harness.
+    /// </summary>
+    public string FailureDumpsDirectory { get; } =
+        Path.Combine(Path.GetTempPath(), $"site-checker-dumps-{Guid.NewGuid():N}");
+
+    /// <summary>
     /// Receives every notification the notifier sends.
     /// </summary>
     public RecordingNotificationChannel Notifications { get; } = new();
@@ -100,6 +107,7 @@ internal sealed class RunnerHarness : IAsyncDisposable
             .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
             .AddSingleton<TimeProvider>(Time)
             .AddSingleton<IScraperService>(Scraper)
+            .AddSingleton(new FailureArtifacts(NullLogger<FailureArtifacts>.Instance, FailureDumpsDirectory))
             .AddSingleton<IPiaContainers>(Vpn)
             .AddSingleton<PiaService>()
             .AddSingleton<IEntityChangeService>(Broadcasts)
@@ -193,6 +201,10 @@ internal sealed class RunnerHarness : IAsyncDisposable
     {
         await _services.DisposeAsync();
         await _connection.DisposeAsync();
+        if (Directory.Exists(FailureDumpsDirectory))
+        {
+            Directory.Delete(FailureDumpsDirectory, recursive: true);
+        }
     }
 }
 
@@ -207,6 +219,11 @@ internal sealed class FakeScraperService : IScraperService
     public List<ScrapeRequest> Requests { get; } = [];
 
     /// <summary>
+    /// The Site IDs whose scripts were evicted, in order.
+    /// </summary>
+    public List<int> Evictions { get; } = [];
+
+    /// <summary>
     /// The browser every Site is scraped in. Browserless doesn't route through the VPN, so by
     /// default the VPN code is never reached.
     /// </summary>
@@ -219,6 +236,12 @@ internal sealed class FakeScraperService : IScraperService
     }
 
     public BrowserType GetBrowserType(bool useVpn) => BrowserType;
+
+    public Task EvictScriptAsync(int siteId, CancellationToken cancellationToken)
+    {
+        Evictions.Add(siteId);
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>

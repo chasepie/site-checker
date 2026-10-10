@@ -1,6 +1,8 @@
 # Script Scrapers run in-process and unsandboxed, behind a network trust boundary
 
 > Accepted in [design 0001](../design/0001-scraper-architecture.md); implemented in its stage 1.
+>
+> **Superseded by [ADR 0006](0006-scripts-run-in-an-isolated-scrape-worker.md):** scripts now run in a separate Scrape Worker container, and the app holds an admin token and reaches Docker through an allowlisting proxy. In-process scripting remains only as the local-development fallback.
 
 Script Scrapers are C# files compiled with `CSharpCompilation` and loaded into a collectible `AssemblyLoadContext` inside the app. They aren't sandboxed and the app has no authentication, so anyone who can reach the API can run code on the host: the app mounts the Docker socket for VPN rotation, and `:ro` doesn't restrict API calls on a socket. We accepted this because SiteChecker is single-user and self-hosted, so the script author is the person running the app. The app must only be reachable from networks where everyone is trusted (today the home LAN and a private Tailscale VPN), and never from the internet, even behind a reverse proxy, unless that proxy requires a login.
 

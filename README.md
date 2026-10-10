@@ -36,12 +36,17 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 │              Backend (ASP.NET Core)                     │
 │  API Server, Scraping Orchestration, VPN Management     │
 └─┬────────────┬───────────────────────┬──────────────────┘
-  │            │                       │
+  │            │                       │ HTTP
   ▼            ▼                       ▼
 ┌────────┐  ┌─────────────┐   ┌──────────────────────┐
-│Database│  │  Notifiers  │   │   Browserless        │
-│(SQLite)│  │Push/Discord │   │Standard & VPN-routed │
-└────────┘  └─────────────┘   └──────────────────────┘
+│Database│  │  Notifiers  │   │    Scrape Worker     │
+│(SQLite)│  │Push/Discord │   │  runs every script   │
+└────────┘  └─────────────┘   └──────────┬───────────┘
+                                         │ CDP
+                              ┌──────────▼───────────┐
+                              │     Browserless      │
+                              │Standard & VPN-routed │
+                              └──────────────────────┘
 ```
 
 ### Components
@@ -50,6 +55,7 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 - **Database** — EF Core models, migrations, and services using SQLite
 - **Frontend** — Angular 21 SPA for monitoring and managing site checks
 - **Scraper** — The shared scrape pipeline (browser, navigation, timeout, screenshots) and the runtime script compiler
+- **ScrapeWorker** — Runs the scrape pipeline, and so every uploaded script, in its own container, away from the app's secrets and database
 - **Scripting** — `SiteChecker.Scripting`, the contract scripts compile against, published as a NuGet package
 - **Notifiers** — Pushover and Discord notification implementations
 
@@ -73,7 +79,15 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 2. **Configure environment variables**
    ```bash
    cp example.env .env
-   # Edit .env with your configuration
+   # Edit .env with your configuration. ADMIN_TOKEN, ALLOWED_HOSTS and SCRAPE_WORKER_SECRET are required.
+   ```
+
+   On Linux, also create the data directories for the app's non-root user (UID 1654), since Docker
+   would create them owned by root, and set `DOCKER_GID` in `.env` to the Docker socket's group
+   (`getent group docker | cut -d: -f3`). Docker Desktop needs neither.
+   ```bash
+   mkdir -p site-checker/data site-checker/logs site-checker/pia
+   sudo chown -R 1654 site-checker/
    ```
 
 3. **Start all services**
@@ -126,10 +140,13 @@ enforces, and how to set up an authoring project with the `SiteChecker.Scripting
 
 ## Security
 
-Site Checker has no authentication, and uploaded scripts run inside the app with access to the Docker
-socket. **Anyone who can reach the app can run code on its host**, so only expose it to trusted
-networks (a home LAN, a private VPN like Tailscale), never to the internet. See
-[docs/configuration.md](docs/configuration.md#trust-boundary).
+Uploaded scripts run unsandboxed, but in the Scrape Worker container: it has no secrets but the
+Browserless token and its own secret, no volumes, no Docker access and no route out except through the browsers. Saving a
+Site or starting a Test Run needs the admin token (`ADMIN_TOKEN`), and the app reaches Docker only
+through a socket proxy that can do nothing but restart the VPN containers.
+
+The rest of the app has no login, so still only expose it to trusted networks (a home LAN, a private
+VPN like Tailscale), never to the internet. See [docs/configuration.md](docs/configuration.md#trust-boundary).
 
 ## Technology Stack
 

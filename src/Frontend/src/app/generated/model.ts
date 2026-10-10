@@ -348,7 +348,10 @@ export type TestRunResult = z.infer<typeof TestRunResult>;
 		const result = await lastValueFrom(obs$);
 		return Site.parse(result);
 	}
-	/** Creates a Site with its Scraper. A script that doesn't compile is rejected with its errors. */
+	/**
+	* Creates a Site with its Scraper. A script that doesn't compile is rejected with its errors.
+	*             Requires the admin token.
+	*/
 	public async createSite(siteRequest: SiteRequest) 
 	{
 		const obs$ = this._httpClient.request(
@@ -362,7 +365,10 @@ export type TestRunResult = z.infer<typeof TestRunResult>;
 		const result = await lastValueFrom(obs$);
 		return Site.parse(result);
 	}
-	/** Updates a Site's settings and Scraper. Without a script, the Site keeps its current one. */
+	/**
+	* Updates a Site's settings and Scraper. Without a script, the Site keeps its current one.
+	*             Requires the admin token.
+	*/
 	public async updateSite(id: number, siteRequest: SiteRequest) 
 	{
 		const obs$ = this._httpClient.request(
@@ -405,7 +411,7 @@ export type TestRunResult = z.infer<typeof TestRunResult>;
 	}
 	/**
 	* Starts a Test Run of an unsaved Scraper and Site settings. The result is sent to the given
-	*             SignalR connection only, as OnTestRunCompleted.
+	*             SignalR connection only, as OnTestRunCompleted. Requires the admin token.
 	*/
 	public async startTestRun(testRunRequest: TestRunRequest) 
 	{

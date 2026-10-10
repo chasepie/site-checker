@@ -23,13 +23,14 @@ public interface IScrapeExecutor
 }
 
 /// <summary>
-/// What an executor gets: the loaded page, how navigating to it went, the request, and a token
-/// that's cancelled at the Site's timeout.
+/// What an executor gets: the loaded page, how navigating to it went, the request, the log the
+/// Scraper's own logging should be recorded in, and a token that's cancelled at the Site's timeout.
 /// </summary>
 public sealed record ExecutorContext(
     IPage Page,
     NavigationResult Navigation,
     ScrapeRequest Request,
+    ScraperLog Log,
     CancellationToken CancellationToken);
 
 /// <summary>
@@ -43,7 +44,12 @@ public sealed class ScriptExecutor(
 {
     private readonly ScriptCache _cache = cache;
     private readonly IScriptCompiler _compiler = compiler;
-    private readonly ILogger _scriptLogger = loggerFactory.CreateLogger("SiteChecker.Script");
+    /// <summary>
+    /// The category scripts log under. The app re-logs a remote scrape's entries under it too.
+    /// </summary>
+    public const string LoggerCategory = "SiteChecker.Script";
+
+    private readonly ILogger _scriptLogger = loggerFactory.CreateLogger(LoggerCategory);
 
     public Type SpecType => typeof(ScriptSpec);
 
@@ -56,7 +62,9 @@ public sealed class ScriptExecutor(
         bool ownsScript;
         if (!request.IsTestRun && request.Site.Id is { } siteId)
         {
-            compiled = _cache.GetOrCompile(siteId, spec.SourceHash, spec.Source, spec.FileName);
+            // Keyed by the source's own hash rather than the request's, which may have crossed a
+            // process boundary: a request can't attach other source to a Site's cached hash.
+            compiled = _cache.GetOrCompile(siteId, ScriptSource.Hash(spec.Source), spec.Source, spec.FileName);
             ownsScript = false;
         }
         else
@@ -75,12 +83,7 @@ public sealed class ScriptExecutor(
 
         try
         {
-            using var scope = _scriptLogger.BeginScope(new Dictionary<string, object?>
-            {
-                ["SiteId"] = request.Site.Id,
-                ["SiteName"] = request.Site.Name,
-                ["SiteCheckId"] = request.SiteCheckId,
-            });
+            using var scope = _scriptLogger.BeginScrapeScope(request);
 
             var outcome = await compiled.Script.CreateInstance().RunAsync(new ScriptContext
             {
@@ -88,7 +91,7 @@ public sealed class ScriptExecutor(
                 Navigation = context.Navigation,
                 CancellationToken = context.CancellationToken,
                 Site = new ScriptSite(request.Site.Name, request.Site.Url, request.BrowserType == BrowserType.BrowserlessVpn),
-                Logger = _scriptLogger,
+                Logger = context.Log.Wrap(_scriptLogger),
             });
 
             if (outcome is null)

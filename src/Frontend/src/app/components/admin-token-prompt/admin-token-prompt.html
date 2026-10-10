@@ -1,0 +1,17 @@
+<form (ngSubmit)="submit()">
+  <div class="modal-header">
+    <h4 class="modal-title">Admin token</h4>
+    <button type="button" class="btn-close" aria-label="Close" (click)="activeModal.dismiss()"></button>
+  </div>
+  <div class="modal-body">
+    <p>Saving a Site or starting a Test Run uploads or runs a script, so it needs the admin token
+      (<code>ADMIN_TOKEN</code>). It's remembered in this browser.</p>
+    <label for="admin-token" class="form-label">Token</label>
+    <input id="admin-token" name="token" type="password" class="form-control" autocomplete="current-password"
+      [ngModel]="token()" (ngModelChange)="token.set($event)" ngbAutofocus required>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline-secondary" (click)="activeModal.dismiss()">Cancel</button>
+    <button type="submit" class="btn btn-primary" [disabled]="!token().trim()">Continue</button>
+  </div>
+</form>

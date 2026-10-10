@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
-using Microsoft.Playwright;
 using SiteChecker.Utilities;
 
 namespace SiteChecker.Scraper;
@@ -28,10 +27,11 @@ public sealed class FailureArtifacts
     public string LogsDirectory { get; }
 
     /// <summary>
-    /// Writes the dumps for a Site Check's Unexpected Failure. Never throws: a dump that can't be
-    /// written is logged and skipped.
+    /// Writes the dumps for a Site Check's Unexpected Failure: a description with the exception,
+    /// and the page's HTML when the scrape captured it. Never throws: a dump that can't be written
+    /// is logged and skipped.
     /// </summary>
-    public async Task WriteAsync(ScrapeRequest request, IPage page, ScrapeResult result, CancellationToken cancellationToken)
+    public async Task WriteAsync(ScrapeRequest request, ScrapeResult result, CancellationToken cancellationToken)
     {
         try
         {
@@ -39,11 +39,13 @@ public sealed class FailureArtifacts
             var filePathBase = Path.Join(LogsDirectory, $"{request.SiteCheckId}_{request.Site.Id}");
 
             await File.WriteAllTextAsync($"{filePathBase}.log", Describe(request, result), cancellationToken);
-            var html = await page.ContentAsync().WaitAsync(cancellationToken);
-            await File.WriteAllTextAsync($"{filePathBase}.html", html, cancellationToken);
+            if (result.PageHtml is { } html)
+            {
+                await File.WriteAllTextAsync($"{filePathBase}.html", html, cancellationToken);
+            }
             _logger.LogInformation("Saved failure dumps to {FilePathBase}.", filePathBase);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning(ex, "Couldn't save the failure dumps for Site Check {SiteCheckId}.", request.SiteCheckId);
         }
@@ -62,11 +64,24 @@ public sealed class FailureArtifacts
         {
             sb.AppendLine($"{diagnostic.FileName}({diagnostic.Line},{diagnostic.Column}): {diagnostic.Id} {diagnostic.Message}");
         }
-        if (result.Exception is not null)
+        if (result.ExceptionDetail is not null)
         {
             sb.AppendLine();
             sb.AppendLine("Exception:");
-            sb.AppendLine(result.Exception.ToString());
+            sb.AppendLine(result.ExceptionDetail);
+        }
+        if (result.Logs.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Scraper log:");
+            foreach (var entry in result.Logs)
+            {
+                sb.AppendLine($"[{entry.Level}] {entry.Message}");
+                if (entry.Exception is not null)
+                {
+                    sb.AppendLine(entry.Exception);
+                }
+            }
         }
         return sb.ToString();
     }

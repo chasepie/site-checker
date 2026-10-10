@@ -61,6 +61,25 @@ cd src/Backend
 dotnet run
 ```
 
+### Scrape Worker
+
+Run locally, the backend scrapes in-process: uploaded scripts run inside it, as they did before the
+Scrape Worker existed. That's convenient for debugging a script, but it isn't how Docker Compose runs
+it. To run scripts in the worker locally, as Compose does:
+
+```bash
+# Uses the same .env (BROWSERLESS_URL, BROWSERLESS_URL_VPN, BROWSERLESS_TOKEN or USE_LOCAL_BROWSER)
+dotnet run --project src/ScrapeWorker   # listens on http://localhost:5280
+```
+
+Then set `SCRAPE_WORKER_URL=http://localhost:5280` in `.env` and start the backend. If `.env` sets
+`SCRAPE_WORKER_SECRET`, both read it; in Development both also run without it. The worker needs
+the browser settings, since it opens the browsers. The backend uses them only to choose each Site's
+browser.
+
+In Development, `ADMIN_TOKEN` and `ALLOWED_HOSTS` are optional: without a token, anyone can save Sites
+and start Test Runs.
+
 ### Frontend
 
 ```bash

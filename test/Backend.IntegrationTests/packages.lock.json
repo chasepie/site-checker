@@ -1036,6 +1036,13 @@
           "Utilities": "[1.0.0, )"
         }
       },
+      "scrapeworker": {
+        "type": "Project",
+        "dependencies": {
+          "Scraper": "[1.0.0, )",
+          "dotenv.net": "[4.2.0, )"
+        }
+      },
       "SiteChecker.Scripting": {
         "type": "Project",
         "dependencies": {

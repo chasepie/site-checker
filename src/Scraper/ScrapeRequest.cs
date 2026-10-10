@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SiteChecker.Scraper;
 
 public enum BrowserType
@@ -18,8 +20,10 @@ public sealed record ScrapeSite(int? Id, string Name, Uri Url, bool UseVpn);
 
 /// <summary>
 /// The Scraper to run. Each kind of Scraper has its own subtype, run by the
-/// <see cref="Executors.IScrapeExecutor"/> for that type.
+/// <see cref="Executors.IScrapeExecutor"/> for that type, and its own <c>kind</c> in JSON.
 /// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(ScriptSpec), "script")]
 public abstract record ScraperSpec;
 
 /// <summary>
@@ -27,7 +31,8 @@ public abstract record ScraperSpec;
 /// </summary>
 /// <param name="FileName">The uploaded file's name, used in compile errors and stack traces.</param>
 /// <param name="Source">The script's source.</param>
-/// <param name="SourceHash">Identifies the source, so an unchanged script's compile is reused.</param>
+/// <param name="SourceHash">The hash the app stored for the source. The executor caches compiles by
+/// the source's own hash, which matches it, rather than trusting this one.</param>
 public sealed record ScriptSpec(string FileName, string Source, string SourceHash) : ScraperSpec;
 
 /// <summary>
@@ -54,7 +59,8 @@ public sealed record ScrapeRequest
     public bool AlwaysTakeScreenshot { get; init; }
 
     /// <summary>
-    /// A Test Run isn't a Site Check: its script isn't cached, and it writes no failure dumps.
+    /// A Test Run isn't a Site Check: its script isn't cached, and it gets no failure dumps.
     /// </summary>
+    [JsonIgnore]
     public bool IsTestRun => SiteCheckId is null;
 }

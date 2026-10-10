@@ -6,16 +6,10 @@ using Microsoft.Playwright;
 namespace SiteChecker.Scraper.Browsers;
 
 /// <summary>
-/// Chooses and connects to the browser a scrape runs in.
+/// Connects to the browser a scrape runs in.
 /// </summary>
 public interface IBrowserProvider
 {
-    /// <summary>
-    /// The browser for a Site: local Playwright when <c>USE_LOCAL_BROWSER</c> is set, otherwise
-    /// Browserless or Browserless VPN, depending on the Site and which URLs are configured.
-    /// </summary>
-    BrowserType GetBrowserType(bool useVpn);
-
     /// <summary>
     /// Connects to the browser and returns a 1920×1080 page in it.
     /// </summary>
@@ -42,32 +36,21 @@ public sealed class BrowserProvider(
 {
     public const string BrowserlessUrlKey = "BROWSERLESS_URL";
     public const string BrowserlessUrlVpnKey = "BROWSERLESS_URL_VPN";
-    public const string UseLocalBrowserKey = "USE_LOCAL_BROWSER";
+
+    /// <summary>
+    /// How long connecting to the browser may take. Opening the browser runs before the Site's
+    /// timeout starts, so whoever waits on a scrape has to allow for it.
+    /// </summary>
+    public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long closing each of the browser context and the connection may take. Closing a
+    /// connection the browser already dropped can hang; this keeps it from holding the runner.
+    /// </summary>
+    public static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IConfiguration _config = config;
     private readonly ILogger<BrowserProvider> _logger = logger;
-
-    public BrowserType GetBrowserType(bool useVpn)
-    {
-        if (bool.TryParse(_config[UseLocalBrowserKey], out var useLocal) && useLocal)
-        {
-            return BrowserType.Local;
-        }
-
-        var browserlessUrlVpn = _config[BrowserlessUrlVpnKey];
-        if (!string.IsNullOrWhiteSpace(browserlessUrlVpn) && useVpn)
-        {
-            return BrowserType.BrowserlessVpn;
-        }
-
-        var browserlessUrl = _config[BrowserlessUrlKey];
-        if (!string.IsNullOrWhiteSpace(browserlessUrl) && !useVpn)
-        {
-            return BrowserType.Browserless;
-        }
-
-        return BrowserType.Local;
-    }
 
     public async Task<IBrowserSession> OpenAsync(BrowserType browserType, CancellationToken cancellationToken)
     {
@@ -106,7 +89,9 @@ public sealed class BrowserProvider(
         if (browserType == BrowserType.Local)
         {
             _logger.LogTrace("Launching local browser");
-            return await playwright.Chromium.ConnectAsync("ws://localhost:3123/playwright");
+            return await playwright.Chromium.ConnectAsync(
+                "ws://localhost:3123/playwright",
+                new() { Timeout = (float)ConnectTimeout.TotalMilliseconds });
         }
 
         var configKey = browserType switch
@@ -141,7 +126,9 @@ public sealed class BrowserProvider(
         query["stealth"] = true.ToString().ToLowerInvariant();
 
         var browserlessUrl = $"{baseUrl}?{query}";
-        return await playwright.Chromium.ConnectOverCDPAsync(browserlessUrl);
+        return await playwright.Chromium.ConnectOverCDPAsync(
+            browserlessUrl,
+            new() { Timeout = (float)ConnectTimeout.TotalMilliseconds });
     }
 
     private sealed class BrowserSession(
@@ -151,11 +138,6 @@ public sealed class BrowserProvider(
         IPage page,
         ILogger logger) : IBrowserSession
     {
-        /// <summary>
-        /// Closing a connection the browser already dropped can hang; don't let it hold the runner.
-        /// </summary>
-        private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(10);
-
         private int _closed;
 
         public IPage Page => page;

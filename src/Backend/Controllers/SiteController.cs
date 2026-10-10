@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SiteChecker.Backend.Extensions;
 using SiteChecker.Backend.Models;
+using SiteChecker.Backend.Services.Security;
 using SiteChecker.Backend.Services.Sites;
 using SiteChecker.Backend.Services.TestRuns;
 using SiteChecker.Database;
 using SiteChecker.Database.Model;
+using SiteChecker.Scraper;
 using SiteChecker.Scraper.Scripts;
 
 namespace SiteChecker.Backend.Controllers;
@@ -15,14 +18,14 @@ namespace SiteChecker.Backend.Controllers;
 public sealed class SiteController(
     SiteCheckerDbContext dbContext,
     SiteValidator validator,
-    ScriptCache scriptCache,
+    IScraperService scraperService,
     TestRunService testRuns,
     TimeProvider timeProvider)
     : ControllerBase
 {
     private readonly SiteCheckerDbContext _dbContext = dbContext;
     private readonly SiteValidator _validator = validator;
-    private readonly ScriptCache _scriptCache = scriptCache;
+    private readonly IScraperService _scraperService = scraperService;
     private readonly TestRunService _testRuns = testRuns;
     private readonly TimeProvider _timeProvider = timeProvider;
 
@@ -51,7 +54,9 @@ public sealed class SiteController(
 
     /// <summary>
     /// Creates a Site with its Scraper. A script that doesn't compile is rejected with its errors.
+    /// Requires the admin token.
     /// </summary>
+    [Authorize(Policy = AdminToken.PolicyName)]
     [HttpPost]
     public async Task<ActionResult<Site>> CreateSite([FromBody] SiteRequest siteRequest)
     {
@@ -72,7 +77,9 @@ public sealed class SiteController(
 
     /// <summary>
     /// Updates a Site's settings and Scraper. Without a script, the Site keeps its current one.
+    /// Requires the admin token.
     /// </summary>
+    [Authorize(Policy = AdminToken.PolicyName)]
     [HttpPut("{id}")]
     public async Task<ActionResult<Site>> UpdateSite(
         [FromRoute] int id,
@@ -103,7 +110,7 @@ public sealed class SiteController(
 
         if (scriptReplaced)
         {
-            _scriptCache.Evict(site.Id);
+            await _scraperService.EvictScriptAsync(site.Id, CancellationToken);
         }
         return Ok(site);
     }
@@ -125,7 +132,7 @@ public sealed class SiteController(
         // database, so clients only hear that the Site was deleted.
         _dbContext.Sites.Remove(site);
         await _dbContext.SaveChangesAsync(CancellationToken);
-        _scriptCache.Evict(id);
+        await _scraperService.EvictScriptAsync(id, CancellationToken);
 
         return NoContent();
     }
@@ -144,8 +151,9 @@ public sealed class SiteController(
 
     /// <summary>
     /// Starts a Test Run of an unsaved Scraper and Site settings. The result is sent to the given
-    /// SignalR connection only, as OnTestRunCompleted.
+    /// SignalR connection only, as OnTestRunCompleted. Requires the admin token.
     /// </summary>
+    [Authorize(Policy = AdminToken.PolicyName)]
     [HttpPost("test-run")]
     public ActionResult StartTestRun([FromBody] TestRunRequest testRunRequest)
     {

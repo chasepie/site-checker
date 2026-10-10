@@ -4,40 +4,133 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: app
     restart: unless-stopped
     ports:
       - "8080:8080"
-    env_file:
-      - .env
+    # Only what the app reads, so a value it doesn't need (such as the PIA password) never reaches it.
+    environment:
+      - TZ=America/New_York
+      # Both required: without them the app stops at startup and logs which is missing. Not `:?`,
+      # which would fail every Compose command, even one that starts only the browsers.
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      - DOCKER_HOST=tcp://docker-proxy:2375
+      - SCRAPE_WORKER_URL=http://scrape-worker:8080
+      # Required (the same value as the worker's); without it the app stops at startup.
+      - SCRAPE_WORKER_SECRET=${SCRAPE_WORKER_SECRET:-}
+      # Only to choose each Site's browser; the worker connects to them.
+      - BROWSERLESS_URL=ws://browserless:3000
+      - BROWSERLESS_URL_VPN=ws://vpn:3000
+      # Read by the app and the worker, and passed to both Browserless containers as TIMEOUT, so
+      # they can't drift.
+      - BROWSERLESS_TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
+      - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-}
+      - VPN_CHANGE_INTERVAL=10
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - DISCORD_TOKEN=${DISCORD_TOKEN:-}
+      - HEALTHCHECKS_URL=${HEALTHCHECKS_URL:-}
+      - OpenTelemetry__OtlpEndpoint=${OpenTelemetry__OtlpEndpoint:-}
+    volumes:
+      # Written by the image's non-root user (UID 1654); see "Upgrading" in docs/configuration.md.
+      - ./site-checker/data:/app/data
+      - ./site-checker/logs:/app/logs
+      - ./site-checker/pia:/pia
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+      - scrape
+      - docker
+    depends_on:
+      - scrape-worker
+      - docker-proxy
+
+  # Runs every scrape, so uploaded scripts run here rather than in the app: no secrets but the
+  # Browserless token and its own secret, no volumes, no Docker access, and no route out except through the browsers.
+  scrape-worker:
+    container_name: site-checker-scrape-worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
     environment:
       - TZ=America/New_York
       - BROWSERLESS_URL=ws://browserless:3000
       - BROWSERLESS_URL_VPN=ws://vpn:3000
-      - VPN_CHANGE_INTERVAL=10
-      # Read by the app and passed to both Browserless containers as TIMEOUT, so they can't drift.
+      - BROWSERLESS_TOKEN=${BROWSERLESS_TOKEN}
       - BROWSERLESS_TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
-    volumes:
-      - ./site-checker/data:/app/data
-      - ./site-checker/logs:/app/logs
-      - ./site-checker/pia:/pia
-      # For VPN rotation. Uploaded scripts run inside this container, and :ro doesn't restrict API
-      # calls on the socket, so anyone who can reach the app can control the host. Keep the app on
-      # trusted networks only (see docs/configuration.md, "Trust boundary").
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-}
+      # Only the app's requests carry it; anything else that reaches the worker, such as a page in
+      # Browserless, can't run a script. Without it the worker stops at startup.
+      - SCRAPE_WORKER_SECRET=${SCRAPE_WORKER_SECRET:-}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 256
+    cpus: 2
+    networks:
+      - scrape
     depends_on:
       - browserless
       - browserless-vpn
+
+  # The app's only access to Docker: inspecting the Browserless VPN container and restarting the two
+  # VPN containers, by name. Everything else, such as creating a container, is refused.
+  docker-proxy:
+    image: wollomatic/socket-proxy:1.13.1
+    container_name: site-checker-docker-proxy
+    restart: unless-stopped
+    # The socket's group: 0 on Docker Desktop, usually the docker group on Linux
+    # (getent group docker | cut -d: -f3).
+    user: "65534:${DOCKER_GID:-0}"
+    command:
+      - -listenip=0.0.0.0
+      - -allowfrom=site-checker
+      - -allowGET=(/v1\.[0-9]+)?/containers/site-checker-browserless-vpn/json
+      - -allowPOST=(/v1\.[0-9]+)?/containers/site-checker-(vpn|browserless-vpn)/restart
+      - -watchdoginterval=3600
+      - -stoponwatchdog
+      - -shutdowngracetime=5
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    mem_limit: 64M
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - docker
 
   browserless:
     image: ghcr.io/browserless/chromium:latest
     container_name: site-checker-browserless
     restart: unless-stopped
+    # For running the backend outside Docker (docs/local-development.md). Only on this machine: from
+    # the LAN, the browser would be a way to reach the worker and the app's internal network.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - TZ=America/New_York
       - TOKEN=${BROWSERLESS_TOKEN}
       - TIMEOUT=${BROWSERLESS_TIMEOUT:-180000}
+    networks:
+      - default
+      - scrape
 
   browserless-vpn:
     image: ghcr.io/browserless/chromium:latest
@@ -56,20 +149,24 @@ services:
     image: thrnz/docker-wireguard-pia:latest
     container_name: site-checker-vpn
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     volumes:
       - ./site-checker/pia:/pia
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    env_file:
-      - .env
     environment:
       - TZ=America/New_York
       - USER=${PIA_USERNAME}
       - PASS=${PIA_PASSWORD}
+      - LOCAL_NETWORK=${LOCAL_NETWORK:-}
       - ACTIVE_HEALTHCHECKS=1
+    # browserless-vpn shares this container's network, so the worker reaches it on scrape. The VPN
+    # firewall accepts each attached network's own subnet.
+    networks:
+      - default
+      - scrape
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv6.conf.default.disable_ipv6=1
@@ -78,3 +175,12 @@ services:
     command: >
       /bin/bash -c "[ -f /pia/loc.txt ] || echo 'us_michigan-pf' > /pia/loc.txt
       && LOC=$(cat /pia/loc.txt) /scripts/run"
+
+networks:
+  # The app, the Scrape Worker and the browsers. No route out: the worker reaches the internet only
+  # through the browsers, which are also on default.
+  scrape:
+    internal: true
+  # Only the app and the socket proxy, with no route out.
+  docker:
+    internal: true

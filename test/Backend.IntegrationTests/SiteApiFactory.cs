@@ -8,16 +8,31 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SiteChecker.Backend.Services;
+using SiteChecker.Backend.Services.Security;
 using SiteChecker.Database;
 using SiteChecker.Scraper;
 
 /// <summary>
 /// The real app over an in-memory SQLite database (otherwise it would use the repo's
 /// <c>site-checker/data</c> file), with demo data off, no background services, and a fake scraper.
+/// It requires <see cref="AdminTokenValue"/>, which clients it creates send.
 /// </summary>
-internal sealed class SiteApiFactory : WebApplicationFactory<Program>
+/// <param name="environment">The host environment; Development unless a test needs another.</param>
+/// <param name="settings">Configuration that replaces the factory's defaults, such as
+/// <c>ADMIN_TOKEN</c>; a <c>null</c> value clears the setting.</param>
+internal sealed class SiteApiFactory(
+    string? environment = null,
+    IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
 {
+    public const string AdminTokenValue = "test-admin-token";
+
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly string _environment = environment ?? Environments.Development;
+    private readonly Dictionary<string, string?> _settings = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [DemoDataSeeder.SeedDemoDataKey] = "false",
+        [AdminToken.AdminTokenKey] = AdminTokenValue,
+    };
 
     public FakeScraperService Scraper { get; } = new();
 
@@ -25,8 +40,17 @@ internal sealed class SiteApiFactory : WebApplicationFactory<Program>
     {
         _connection.Open();
 
-        builder.UseEnvironment(Environments.Development);
-        builder.UseSetting(DemoDataSeeder.SeedDemoDataKey, "false");
+        foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
+        {
+            _settings[key] = value;
+        }
+
+        builder.UseEnvironment(_environment);
+        foreach (var (key, value) in _settings)
+        {
+            // Empty rather than absent, so a value from the developer's .env can't fill it in.
+            builder.UseSetting(key, value ?? string.Empty);
+        }
         builder.ConfigureTestServices(services =>
         {
             services.ConfigureDbContext<SiteCheckerDbContext>(o => o.UseSqlite(_connection));
@@ -42,6 +66,12 @@ internal sealed class SiteApiFactory : WebApplicationFactory<Program>
                 services.Remove(descriptor);
             }
         });
+    }
+
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", AdminTokenValue);
     }
 
     public SiteCheckerDbContext CreateDbContext() => new(

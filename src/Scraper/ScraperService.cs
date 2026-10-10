@@ -11,7 +11,7 @@ namespace SiteChecker.Scraper;
 
 public interface IScraperService
 {
-    /// <inheritdoc cref="IBrowserProvider.GetBrowserType"/>
+    /// <inheritdoc cref="BrowserSelector.GetBrowserType"/>
     BrowserType GetBrowserType(bool useVpn);
 
     /// <summary>
@@ -20,37 +20,55 @@ public interface IScraperService
     /// <paramref name="cancellationToken"/> is cancelled.
     /// </summary>
     Task<ScrapeResult> ScrapeAsync(ScrapeRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Unloads the Site's compiled script, if any. Call after the Site's script is replaced or the
+    /// Site is deleted. Never throws, except <see cref="OperationCanceledException"/>.
+    /// </summary>
+    Task EvictScriptAsync(int siteId, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// The shared scrape pipeline every kind of Scraper runs through: it opens the browser, navigates
 /// to the Site's URL, runs the executor for the Scraper's kind under the Site's timeout, and takes
-/// the screenshot and failure dumps. Exceptions are converted to Unexpected Failures here, and
-/// only here.
+/// the screenshot and, for a Site Check's Unexpected Failure, the page's HTML. Exceptions are
+/// converted to Unexpected Failures here, and only here. It writes nothing: the result carries
+/// everything, so the pipeline can run in another process (the Site Check Runner writes the
+/// failure dumps).
 /// </summary>
 /// <remarks>
 /// Playwright calls take no cancellation token, and a script only stops if it checks one, so the
 /// timeout is enforced from outside: the executor runs on the thread pool, and at the timeout the
 /// pipeline stops waiting, takes the screenshot, and closes the browser, which makes any pending
-/// Playwright call throw. A script stuck in a synchronous loop keeps its thread until the app
-/// restarts (see <c>docs/adr/0004-scripts-run-in-process-behind-a-trust-boundary.md</c>).
+/// Playwright call throw. A script stuck in a synchronous loop keeps its thread; the
+/// <see cref="IAbandonedRunMonitor"/> decides whether that ends the process.
 /// </remarks>
 public sealed class ScraperService(
+    BrowserSelector browserSelector,
     IBrowserProvider browsers,
     IEnumerable<IScrapeExecutor> executors,
+    ScriptCache scriptCache,
     ScrapeTimeouts timeouts,
-    FailureArtifacts artifacts,
+    IAbandonedRunMonitor abandonedRuns,
     TimeProvider timeProvider,
     ILogger<ScraperService> logger) : IScraperService
 {
+    private readonly BrowserSelector _browserSelector = browserSelector;
     private readonly IBrowserProvider _browsers = browsers;
     private readonly IReadOnlyList<IScrapeExecutor> _executors = executors.ToList();
+    private readonly ScriptCache _scriptCache = scriptCache;
     private readonly ScrapeTimeouts _timeouts = timeouts;
-    private readonly FailureArtifacts _artifacts = artifacts;
+    private readonly IAbandonedRunMonitor _abandonedRuns = abandonedRuns;
     private readonly TimeProvider _timeProvider = timeProvider;
     private readonly ILogger<ScraperService> _logger = logger;
 
-    public BrowserType GetBrowserType(bool useVpn) => _browsers.GetBrowserType(useVpn);
+    public BrowserType GetBrowserType(bool useVpn) => _browserSelector.GetBrowserType(useVpn);
+
+    public Task EvictScriptAsync(int siteId, CancellationToken cancellationToken)
+    {
+        _scriptCache.Evict(siteId);
+        return Task.CompletedTask;
+    }
 
     public async Task<ScrapeResult> ScrapeAsync(ScrapeRequest request, CancellationToken cancellationToken)
     {
@@ -58,21 +76,7 @@ public sealed class ScraperService(
         var result = await ScrapeCoreAsync(request, cancellationToken);
         result = result with { Duration = _timeProvider.GetElapsedTime(started) };
 
-        if (result.Outcome == ScrapeOutcome.UnexpectedFailure)
-        {
-            _logger.LogError(result.Exception, "Scraping {SiteName} (Site Check {SiteCheckId}) failed: {Message}",
-                request.Site.Name, request.SiteCheckId, result.Message);
-        }
-        else if (result.Outcome == ScrapeOutcome.KnownFailure)
-        {
-            _logger.LogWarning("Scraping {SiteName} (Site Check {SiteCheckId}) found a Known Failure: {Message}",
-                request.Site.Name, request.SiteCheckId, result.Message);
-        }
-        else
-        {
-            _logger.LogInformation("Scraped {SiteName} (Site Check {SiteCheckId}) in {Duration}.",
-                request.Site.Name, request.SiteCheckId, result.Duration);
-        }
+        _logger.LogScrapeOutcome(request, result);
         return result;
     }
 
@@ -96,13 +100,14 @@ public sealed class ScraperService(
 
         await using (session)
         {
+            var log = new ScraperLog();
             var timeout = _timeouts.Resolve(request.Timeout);
             using var timeoutCancellation = new CancellationTokenSource(timeout, _timeProvider);
             using var runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCancellation.Token);
 
             // Task.Run, so even a script that blocks before its first await can't block the runner.
             var run = Task.Run(
-                () => NavigateAndExecuteAsync(executor, session.Page, request, runCancellation.Token),
+                () => NavigateAndExecuteAsync(executor, session.Page, request, log, runCancellation.Token),
                 CancellationToken.None);
 
             ScrapeResult result;
@@ -112,7 +117,18 @@ public sealed class ScraperService(
                 var deadline = Task.Delay(timeout, _timeProvider, stopWaiting.Token);
                 var first = await Task.WhenAny(run, deadline);
                 await stopWaiting.CancelAsync();
-                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    // The caller gave up (in the Scrape Worker, the app's request was aborted), so
+                    // the run is abandoned just as at a timeout: its token is already cancelled
+                    // through runCancellation, and a run that ignores it must still be tracked.
+                    if (!run.IsCompleted)
+                    {
+                        await session.CloseAsync();
+                        _abandonedRuns.Track(run, request);
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
 
                 // A run that threw once the timeout fired (such as a script stopping on its token)
                 // ended because of the timeout, even if it beat the deadline here.
@@ -128,7 +144,7 @@ public sealed class ScraperService(
                 }
             }
 
-            // The screenshot and dumps get their own budget outside the timeout, so a timed-out
+            // The screenshot and page HTML get their own budget outside the timeout, so a timed-out
             // scrape, the failure most worth seeing, still gets them.
             using var artifactBudget = new CancellationTokenSource(ScrapeTimeouts.ArtifactBudget, _timeProvider);
             if (result.Outcome != ScrapeOutcome.Succeeded || request.AlwaysTakeScreenshot)
@@ -138,14 +154,16 @@ public sealed class ScraperService(
 
             if (result.Outcome == ScrapeOutcome.UnexpectedFailure && !request.IsTestRun)
             {
-                await _artifacts.WriteAsync(request, session.Page, result, artifactBudget.Token);
+                result = result with { PageHtml = await TryGetPageHtmlAsync(session.Page, artifactBudget.Token) };
             }
+
+            result = result with { Logs = log.Entries };
 
             if (timedOut)
             {
                 // Makes any Playwright call the abandoned run is waiting on throw.
                 await session.CloseAsync();
-                ObserveAbandoned(run, request);
+                _abandonedRuns.Track(run, request);
             }
 
             return result;
@@ -156,6 +174,7 @@ public sealed class ScraperService(
         IScrapeExecutor executor,
         IPage page,
         ScrapeRequest request,
+        ScraperLog log,
         CancellationToken cancellationToken)
     {
         // Navigation errors don't fail the scrape: the Scraper decides what they mean, such as a
@@ -171,7 +190,7 @@ public sealed class ScraperService(
             navigation = NavigationResult.FromError(ex);
         }
 
-        return await executor.ExecuteAsync(new ExecutorContext(page, navigation, request, cancellationToken));
+        return await executor.ExecuteAsync(new ExecutorContext(page, navigation, request, log, cancellationToken));
     }
 
     private static async Task<ScrapeResult> CompletedResultAsync(Task<ScrapeResult> run)
@@ -199,14 +218,17 @@ public sealed class ScraperService(
         }
     }
 
-    private void ObserveAbandoned(Task run, ScrapeRequest request)
+    private async Task<string?> TryGetPageHtmlAsync(IPage page, CancellationToken budget)
     {
-        _ = run.ContinueWith(
-            t => _logger.LogInformation(t.Exception?.GetBaseException(),
-                "The timed-out run for {SiteName} (Site Check {SiteCheckId}) has ended.", request.Site.Name, request.SiteCheckId),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+        try
+        {
+            return await page.ContentAsync().WaitAsync(budget);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Couldn't read the page's HTML.");
+            return null;
+        }
     }
 }
 
@@ -217,7 +239,10 @@ public static class ScraperServiceExtensions
         public IServiceCollection AddScraperServices()
         {
             services.TryAddSingleton(TimeProvider.System);
+            // A host that can restart (the Scrape Worker) registers one that stops the process.
+            services.TryAddSingleton<IAbandonedRunMonitor, LoggingAbandonedRunMonitor>();
             return services
+                .AddSingleton<BrowserSelector>()
                 .AddSingleton<IBrowserProvider, BrowserProvider>()
                 .AddSingleton<IScriptCompiler, ScriptCompiler>()
                 .AddSingleton<ScriptCache>()
