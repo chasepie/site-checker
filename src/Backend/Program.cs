@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using dotenv.net;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -98,7 +99,7 @@ public class Program
 
         services.AddSiteCheckRunner();
 
-        services.AddAdminToken();
+        services.AddLogin();
         services.AddAllowedHosts();
 
         services.AddHttpContextAccessor();
@@ -121,30 +122,38 @@ public class Program
         if (app.Environment.IsProduction())
         {
             app.UseDefaultFiles();
-            app.MapStaticAssets();
+            // The SPA itself is public, so the login page can load; its data isn't.
+            app.MapStaticAssets().AllowAnonymous();
         }
 
         app.MapOpenApi();
         app.MapScalarApiReference();
 
         app.UseRouting();
+        app.UseHubOriginCheck($"/{SignalRConstants.HubName}");
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseRateLimiter();
 
+        // Every endpoint requires the login (the fallback policy) unless it's marked anonymous.
         app.MapControllers();
-        app.MapHealthChecks("/healthz");
-        app.MapHub<DataHub>($"/{SignalRConstants.HubName}");
+        app.MapHealthChecks("/healthz").AllowAnonymous();
+        // SignalR keeps the user it connected with, so close the connection when the session ends.
+        app.MapHub<DataHub>($"/{SignalRConstants.HubName}", options => options.CloseOnAuthenticationExpiration = true);
 
-        app.MapFallbackToFile("/index.html");
+        app.MapFallbackToFile("/index.html").AllowAnonymous();
     }
 
     /// <summary>
-    /// Fails startup when the admin token or the allowed hosts are missing outside Development,
+    /// Fails startup when the password or the allowed hosts are missing outside Development,
     /// rather than on the first request.
     /// </summary>
     private static void ValidateSecuritySettings(WebApplication app)
     {
-        app.Services.GetRequiredService<AdminToken>();
+        app.Services.GetRequiredService<AdminPassword>();
+        // Reads SESSION_DAYS.
+        _ = app.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(CookieAuthenticationDefaults.AuthenticationScheme);
         _ = app.Services.GetRequiredService<IOptions<HostFilteringOptions>>().Value;
     }
 

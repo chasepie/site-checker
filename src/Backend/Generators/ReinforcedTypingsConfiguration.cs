@@ -86,6 +86,8 @@ public static partial class ReinforcedTypingsConfiguration
             typeof(SiteValidationResult),
             typeof(TestRunRequest),
             typeof(TestRunResult),
+            typeof(LoginRequest),
+            typeof(SessionInfo),
         };
         builder.ExportAsInterfaces(dbClasses, builder =>
         {

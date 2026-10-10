@@ -17,7 +17,12 @@ Checked against Microsoft's ASP.NET Core 10 docs (SignalR authn/authz and securi
 - **Before merge,** the last commit deletes `PLAN.md`.
 
 ### Progress
-- [ ] 1. Backend login
+- [x] 1. Backend login
+  - Deviation: antiforgery is validated by our own `ValidateAntiforgeryFilter`, not MVC's `AutoValidateAntiforgeryToken`, which needs the Razor view services (500: "No service for type AutoValidateAntiforgeryTokenAuthorizationFilter"). It also honours `[IgnoreAntiforgeryToken]`, which isn't `IAntiforgeryMetadata`.
+  - Verified: without any redirect override, the hub's negotiate also answers 401, so the docs hold for it too. The cookie's `LoginPath` is `/login` with `returnUrl`, so the remaining pages (Scalar) redirect to the SPA's login page.
+  - `SESSION_DAYS` is read at startup (a bad value fails it), and the data directory moved to `AppDirectories.Data` (Utilities), shared by the database and the key store.
+  - Tests write keys to a temporary directory. `UseEphemeralDataProtectionProvider` wasn't enough: data protection's startup service still created keys in `site-checker/data/keys` (12 stray key files, deleted; the folder is new on this branch).
+  - The frontend still has the admin token prompt until phase 2, so the UI doesn't work at this commit.
 - [ ] 2. Frontend login
 - [ ] 3. Compose, docs, ADR and a real-stack check
 - [ ] Remove `PLAN.md`, then open the PR

@@ -1,5 +1,11 @@
-using Microsoft.AspNetCore.Authentication;
+using System.Globalization;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HostFiltering;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using SiteChecker.Utilities;
 
 namespace SiteChecker.Backend.Services.Security;
 
@@ -12,6 +18,30 @@ public static class SecurityExtensions
     public const string AllowedHostsKey = "ALLOWED_HOSTS";
 
     /// <summary>
+    /// How many days a login lasts without being used (default 30). Each request extends it.
+    /// </summary>
+    public const string SessionDaysKey = "SESSION_DAYS";
+
+    public const string SessionCookieName = "SiteChecker.Session";
+
+    /// <summary>
+    /// The header Angular's HttpClient sends the antiforgery token in, read from
+    /// <see cref="AntiforgeryCookieName"/>.
+    /// </summary>
+    public const string AntiforgeryHeaderName = "X-XSRF-TOKEN";
+
+    /// <summary>
+    /// The cookie the antiforgery request token is issued in, readable by the page's scripts.
+    /// </summary>
+    public const string AntiforgeryCookieName = "XSRF-TOKEN";
+
+    public const string LoginRateLimitPolicy = "login";
+
+    public const int LoginAttemptsPerMinute = 5;
+
+    private const int DefaultSessionDays = 30;
+
+    /// <summary>
     /// The entries <c>HostFilteringMiddleware</c> treats as "allow any host". Any one of them in the
     /// list turns filtering off, whatever else is listed.
     /// </summary>
@@ -20,20 +50,64 @@ public static class SecurityExtensions
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers the admin token, its authentication scheme and the <see cref="AdminToken.PolicyName"/>
-        /// policy.
+        /// Registers the login: <see cref="AdminPassword"/>, cookie sessions lasting
+        /// <c>SESSION_DAYS</c>, a fallback policy that puts every endpoint behind the login (unless
+        /// no password is required), antiforgery on every controller write, the login rate limit,
+        /// and data protection keys kept in the data directory, so a restart doesn't log you out.
         /// </summary>
-        public IServiceCollection AddAdminToken()
+        public IServiceCollection AddLogin()
         {
-            services.AddSingleton<AdminToken>();
+            services.AddSingleton<AdminPassword>();
+
             services
-                .AddAuthentication(AdminToken.SchemeName)
-                .AddScheme<AuthenticationSchemeOptions, AdminTokenAuthenticationHandler>(AdminToken.SchemeName, configureOptions: null);
+                .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+                .AddCookie();
+            services
+                .AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
+                .Configure<IConfiguration>((options, configuration) =>
+                {
+                    options.Cookie.Name = SessionCookieName;
+                    options.Cookie.HttpOnly = true;
+                    options.Cookie.SameSite = SameSiteMode.Strict;
+                    // The app is often reached over plain HTTP on the LAN.
+                    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                    options.ExpireTimeSpan = TimeSpan.FromDays(ReadSessionDays(configuration));
+                    options.SlidingExpiration = true;
+
+                    // API endpoints, including the SignalR hub, answer 401/403 (ASP.NET Core 10 and
+                    // later). Pages that aren't the SPA, such as Scalar, redirect to its login page,
+                    // which reads returnUrl.
+                    options.LoginPath = "/login";
+                    options.ReturnUrlParameter = "returnUrl";
+                });
+
+            services.AddSingleton<IAuthorizationHandler, LoggedInHandler>();
             services
                 .AddAuthorizationBuilder()
-                .AddPolicy(AdminToken.PolicyName, policy => policy
-                    .AddAuthenticationSchemes(AdminToken.SchemeName)
-                    .RequireAuthenticatedUser());
+                .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+                    .AddRequirements(new LoggedInRequirement())
+                    .Build());
+
+            services.AddAntiforgery(options => options.HeaderName = AntiforgeryHeaderName);
+            services.Configure<MvcOptions>(options => options.Filters.Add<ValidateAntiforgeryFilter>());
+
+            services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                // One user, so one shared window: no per-client partition to get wrong behind a proxy.
+                options.AddFixedWindowLimiter(LoginRateLimitPolicy, window =>
+                {
+                    window.PermitLimit = LoginAttemptsPerMinute;
+                    window.Window = TimeSpan.FromMinutes(1);
+                    window.QueueLimit = 0;
+                });
+            });
+
+            services
+                .AddDataProtection()
+                .SetApplicationName(nameof(SiteChecker))
+                .PersistKeysToFileSystem(new DirectoryInfo(Path.Join(AppDirectories.Data, "keys")));
+
             return services;
         }
 
@@ -68,5 +142,40 @@ public static class SecurityExtensions
                 });
             return services;
         }
+    }
+
+    /// <exception cref="InvalidOperationException"><c>SESSION_DAYS</c> isn't a positive whole number.</exception>
+    private static int ReadSessionDays(IConfiguration configuration)
+    {
+        var value = configuration[SessionDaysKey];
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return DefaultSessionDays;
+        }
+
+        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var days) || days <= 0)
+        {
+            throw new InvalidOperationException($"{SessionDaysKey} must be a positive whole number of days, but is '{value}'.");
+        }
+        return days;
+    }
+}
+
+/// <summary>
+/// The fallback policy's requirement: logged in, or no password required (Development).
+/// </summary>
+public sealed class LoggedInRequirement : IAuthorizationRequirement;
+
+public sealed class LoggedInHandler(AdminPassword adminPassword) : AuthorizationHandler<LoggedInRequirement>
+{
+    private readonly AdminPassword _adminPassword = adminPassword;
+
+    protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, LoggedInRequirement requirement)
+    {
+        if (!_adminPassword.IsRequired || context.User.Identity?.IsAuthenticated == true)
+        {
+            context.Succeed(requirement);
+        }
+        return Task.CompletedTask;
     }
 }
