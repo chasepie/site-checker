@@ -8,7 +8,7 @@ Configuration is managed through `appsettings.json`, `.env` files, and Docker en
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `BROWSERLESS_TOKEN`           | Yes      | Authentication token for Browserless (any value works when self-hosting)                  |
 | `ADMIN_PASSWORD`              | Yes      | The password for logging in to the app; everything but the login page needs a login. Use a long random value (`openssl rand -base64 24`). Required outside Development; when it's unset in Development, login is off |
-| `SESSION_DAYS`                | No       | How many days a login lasts without being used (default: 30). Each visit extends it, and restarting the app doesn't end it |
+| `SESSION_DAYS`                | No       | How many days a login lasts (default: 30, at most 36500). A visit in the second half of that renews it for the full period, so an unused login ends between half and all of it after the last visit. Restarting the app doesn't end it |
 | `ALLOWED_HOSTS`               | Yes      | The host names the app is reached by, separated by semicolons, such as `sitechecker.lan;sitechecker.tailnet.ts.net`. Requests with any other `Host` header are rejected, so a web page can't reach the app by pointing its own domain at the app's address (DNS rebinding). `localhost` is always allowed. Required outside Development, and can't include `*`, `0.0.0.0` or `[::]`, which ASP.NET Core treats as "any host" |
 | `PIA_USERNAME`                | Yes      | Private Internet Access VPN username                                                      |
 | `PIA_PASSWORD`                | Yes      | Private Internet Access VPN password                                                      |
@@ -47,9 +47,11 @@ What's still exposed:
 
 - **The password is the key to running code.** Anyone who logs in can run code in the worker. Use a
   long random password; login attempts are limited to 5 a minute.
-- **The session cookie is as good as the password** until it expires (`SESSION_DAYS`) or you log
-  out. It's HttpOnly and `SameSite=Strict`, but it's only `Secure` when you reach the app over
-  HTTPS. Over plain HTTP, someone who can watch your network traffic could copy it.
+- **The session cookie is as good as the password** until it expires (`SESSION_DAYS`) or the
+  password changes. Logging out only removes it from that browser, so a copy of it keeps working;
+  change `ADMIN_PASSWORD` to end every session. It's HttpOnly and `SameSite=Strict`, but it's only
+  `Secure` when you reach the app over HTTPS. Over plain HTTP, someone who can watch your network
+  traffic could copy it.
 - **The browsers can reach your LAN.** A script drives Browserless, which can load any address the
   Docker host can.
 - **Without `SCRAPE_WORKER_URL`, scripts run inside the app**, with its secrets and database. That's

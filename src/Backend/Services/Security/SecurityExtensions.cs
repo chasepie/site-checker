@@ -19,7 +19,9 @@ public static class SecurityExtensions
     public const string AllowedHostsKey = "ALLOWED_HOSTS";
 
     /// <summary>
-    /// How many days a login lasts without being used (default 30). Each request extends it.
+    /// How many days a login lasts (default 30). A request in the second half of that renews it for
+    /// the full period (sliding expiration), so an unused login ends between half and all of it
+    /// after the last visit.
     /// </summary>
     public const string SessionDaysKey = "SESSION_DAYS";
 
@@ -41,6 +43,12 @@ public static class SecurityExtensions
     public const int LoginAttemptsPerMinute = 5;
 
     private const int DefaultSessionDays = 30;
+
+    /// <summary>
+    /// 100 years. Much more and a login's expiry passes the year 9999, which can't be represented,
+    /// so every login would fail.
+    /// </summary>
+    private const int MaxSessionDays = 36_500;
 
     /// <summary>
     /// The entries <c>HostFilteringMiddleware</c> treats as "allow any host". Any one of them in the
@@ -158,7 +166,8 @@ public static class SecurityExtensions
         }
     }
 
-    /// <exception cref="InvalidOperationException"><c>SESSION_DAYS</c> isn't a positive whole number.</exception>
+    /// <exception cref="InvalidOperationException"><c>SESSION_DAYS</c> isn't a whole number of days
+    /// from 1 to <see cref="MaxSessionDays"/>.</exception>
     private static int ReadSessionDays(IConfiguration configuration)
     {
         var value = configuration[SessionDaysKey];
@@ -167,9 +176,13 @@ public static class SecurityExtensions
             return DefaultSessionDays;
         }
 
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var days) || days <= 0)
+        // Trimmed, like the password, so stray whitespace in .env doesn't stop startup.
+        if (!int.TryParse(value.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var days)
+            || days <= 0
+            || days > MaxSessionDays)
         {
-            throw new InvalidOperationException($"{SessionDaysKey} must be a positive whole number of days, but is '{value}'.");
+            throw new InvalidOperationException(
+                $"{SessionDaysKey} must be a whole number of days from 1 to {MaxSessionDays}, but is '{value}'.");
         }
         return days;
     }

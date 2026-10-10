@@ -3,7 +3,10 @@ import { Router } from '@angular/router';
 import { AuthController } from '../generated/model';
 import { SignalrService } from './signalr.service';
 
-/** Delays before each attempt to reconnect the hub after it closes for good. */
+/**
+ * Delays before each attempt to reconnect the hub after it closes for good. The last one repeats
+ * until it connects, so live updates resume after an outage of any length.
+ */
 const RECONNECT_DELAYS_MS = [0, 2_000, 10_000, 30_000];
 
 /**
@@ -88,7 +91,8 @@ export class AuthService {
    * automatic reconnecting. Starts it again while the session is still valid.
    */
   private async reconnectIfStillLoggedIn() {
-    for (const delay of RECONNECT_DELAYS_MS) {
+    for (let attempt = 0; ; attempt++) {
+      const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)];
       await new Promise(resolve => setTimeout(resolve, delay));
       if (this._loggingOut) {
         return;

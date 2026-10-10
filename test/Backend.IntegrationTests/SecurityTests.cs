@@ -164,7 +164,11 @@ public sealed class SecurityTests
         }
         finally
         {
-            Directory.Delete(keys, recursive: true);
+            // Missing if the first factory failed before writing a key; don't hide that failure.
+            if (Directory.Exists(keys))
+            {
+                Directory.Delete(keys, recursive: true);
+            }
         }
     }
 
@@ -301,6 +305,7 @@ public sealed class SecurityTests
     [DataRow("0")]
     [DataRow("-1")]
     [DataRow("a week")]
+    [DataRow("36501")]
     public async Task InvalidSessionDays_FailsStartup(string sessionDays)
     {
         await using var factory = new SiteApiFactory(settings: new Dictionary<string, string?>
@@ -318,13 +323,15 @@ public sealed class SecurityTests
     [TestMethod]
     [DataRow("http://localhost:8080", HttpStatusCode.OK)]
     [DataRow("https://sitechecker.lan", HttpStatusCode.OK)]
+    [DataRow("http://[fd7a:115c::1]:8080", HttpStatusCode.OK)]
     [DataRow("https://other-machine.tailnet.ts.net", HttpStatusCode.Forbidden)]
     [DataRow("null", HttpStatusCode.Forbidden)]
     public async Task Hub_FromAPageOnAnotherHost_IsForbidden(string origin, HttpStatusCode expected)
     {
         await using var factory = new SiteApiFactory(settings: new Dictionary<string, string?>
         {
-            [SecurityExtensions.AllowedHostsKey] = "sitechecker.lan",
+            // An IPv6 address is listed in brackets, as HostFilteringMiddleware matches it.
+            [SecurityExtensions.AllowedHostsKey] = "sitechecker.lan;[fd7a:115c::1]",
         });
         using var client = await factory.CreateLoggedInClientAsync(Ct);
         using var request = new HttpRequestMessage(HttpMethod.Post, NegotiatePath);

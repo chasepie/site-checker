@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace SiteChecker.Backend.Services.Security;
 
@@ -42,14 +43,9 @@ public static class HubOriginCheck
         {
             return true;
         }
-        if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
-        {
-            return false;
-        }
-
-        var host = originUri.IdnHost;
-        return allowedHosts.Any(allowed => allowed.StartsWith("*.", StringComparison.Ordinal)
-            ? host.EndsWith(allowed[1..], StringComparison.OrdinalIgnoreCase)
-            : string.Equals(host, allowed, StringComparison.OrdinalIgnoreCase));
+        // Matched the way HostFilteringMiddleware matches Host headers (port ignored, IPv6 in
+        // brackets, *.example.com wildcards), so the hub accepts exactly the hosts the app does.
+        return Uri.TryCreate(origin, UriKind.Absolute, out var originUri)
+            && HostString.MatchesAny(originUri.Authority, [.. allowedHosts.Select(host => new StringSegment(host))]);
     }
 }

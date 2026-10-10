@@ -23,6 +23,6 @@ We chose this because ADR 0006's admin token gated only uploading and running sc
 ## Consequences
 
 - One password guards everything, with no second factor. Keep the app on trusted networks, and put HTTPS and a proxy's own login in front of it before any internet exposure.
-- Over plain HTTP, the session cookie isn't `Secure`, so someone watching the network could copy it.
+- Over plain HTTP, the session cookie isn't `Secure`, so someone watching the network could copy it. Sessions aren't stored on the server, so logging out doesn't revoke a copy; only its expiry or a password change does.
 - New endpoints are private unless marked `[AllowAnonymous]`, and every controller write needs the antiforgery token.
 - Losing the data directory's `keys/` folder logs everyone out, which is harmless.

@@ -21,6 +21,7 @@ public sealed class AdminPassword(IConfiguration configuration, IHostEnvironment
     public const string SessionStampClaim = "session-stamp";
 
     private readonly byte[]? _passwordHash = HashConfiguredPassword(configuration, environment, logger);
+    private string? _sessionStamp;
 
     /// <summary>
     /// Whether logging in is required. Only Development runs without a password.
@@ -42,7 +43,8 @@ public sealed class AdminPassword(IConfiguration configuration, IHostEnvironment
     /// </summary>
     public string? SessionStamp => _passwordHash is null
         ? null
-        : Convert.ToBase64String(SHA256.HashData([.. "SiteChecker session stamp\n"u8, .. _passwordHash]));
+        // Checked on every request, so it's derived once.
+        : _sessionStamp ??= Convert.ToBase64String(SHA256.HashData([.. "SiteChecker session stamp\n"u8, .. _passwordHash]));
 
     /// <summary>
     /// Whether a session's stamp was made with the current password.
