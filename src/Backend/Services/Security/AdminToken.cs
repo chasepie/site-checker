@@ -7,7 +7,11 @@ namespace SiteChecker.Backend.Services.Security;
 /// The token that gates uploading and running scripts (<c>ADMIN_TOKEN</c>). It's required outside
 /// Development; in Development, leaving it unset turns the gate off.
 /// </summary>
-public sealed class AdminToken
+/// <remarks>
+/// Constructing it throws <see cref="InvalidOperationException"/> when the token isn't set outside
+/// Development, so startup fails.
+/// </remarks>
+public sealed class AdminToken(IConfiguration configuration, IHostEnvironment environment, ILogger<AdminToken> logger)
 {
     public const string AdminTokenKey = "ADMIN_TOKEN";
 
@@ -18,26 +22,7 @@ public sealed class AdminToken
 
     public const string SchemeName = "AdminToken";
 
-    private readonly byte[]? _tokenHash;
-
-    /// <exception cref="InvalidOperationException">The token isn't set outside Development.</exception>
-    public AdminToken(IConfiguration configuration, IHostEnvironment environment, ILogger<AdminToken> logger)
-    {
-        var token = configuration[AdminTokenKey];
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            if (!environment.IsDevelopment())
-            {
-                throw new InvalidOperationException(
-                    $"{AdminTokenKey} must be set. It's the token the UI asks for before saving a Site or starting a Test Run, since both upload or run a script.");
-            }
-
-            logger.LogWarning("{Key} isn't set, so anyone who can reach the app can upload and run scripts.", AdminTokenKey);
-            return;
-        }
-
-        _tokenHash = Hash(token);
-    }
+    private readonly byte[]? _tokenHash = HashConfiguredToken(configuration, environment, logger);
 
     /// <summary>
     /// Whether a token is required. Only Development runs without one.
@@ -50,6 +35,28 @@ public sealed class AdminToken
     /// </summary>
     public bool Matches(string candidate)
         => _tokenHash is not null && CryptographicOperations.FixedTimeEquals(_tokenHash, Hash(candidate));
+
+    /// <summary>
+    /// The configured token's hash, or <c>null</c> when Development leaves it unset. Trimmed, like
+    /// the UI trims what it's given, so stray whitespace in <c>.env</c> can't make it unmatchable.
+    /// </summary>
+    private static byte[]? HashConfiguredToken(IConfiguration configuration, IHostEnvironment environment, ILogger logger)
+    {
+        var token = configuration[AdminTokenKey]?.Trim();
+        if (!string.IsNullOrEmpty(token))
+        {
+            return Hash(token);
+        }
+
+        if (!environment.IsDevelopment())
+        {
+            throw new InvalidOperationException(
+                $"{AdminTokenKey} must be set. It's the token the UI asks for before saving a Site or starting a Test Run, since both upload or run a script.");
+        }
+
+        logger.LogWarning("{Key} isn't set, so anyone who can reach the app can upload and run scripts.", AdminTokenKey);
+        return null;
+    }
 
     private static byte[] Hash(string value) => SHA256.HashData(Encoding.UTF8.GetBytes(value));
 }

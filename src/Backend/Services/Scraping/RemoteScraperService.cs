@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SiteChecker.Scraper;
 using SiteChecker.Scraper.Browsers;
 using SiteChecker.Scraper.Executors;
@@ -12,7 +13,9 @@ namespace SiteChecker.Backend.Services.Scraping;
 /// scrape, long enough for it to restart after stopping on an abandoned run.</param>
 /// <param name="ReadinessPollInterval">How often to ask whether it's healthy.</param>
 /// <param name="ResponseAllowance">How much longer than the Site's timeout a scrape may take to
-/// come back: the screenshot and page HTML budget, closing the browser, and the transfer.</param>
+/// come back: connecting to the browser (before the timeout starts), the screenshot and page HTML
+/// budget, closing the browser context and connection, and the transfer. Giving up sooner would
+/// release the scrape lock while the worker still uses the browser.</param>
 public sealed record RemoteScraperOptions(
     TimeSpan ReadinessTimeout,
     TimeSpan ReadinessPollInterval,
@@ -21,7 +24,10 @@ public sealed record RemoteScraperOptions(
     public static RemoteScraperOptions Default { get; } = new(
         ReadinessTimeout: TimeSpan.FromSeconds(120),
         ReadinessPollInterval: TimeSpan.FromSeconds(1),
-        ResponseAllowance: ScrapeTimeouts.ArtifactBudget + TimeSpan.FromSeconds(25));
+        ResponseAllowance: BrowserProvider.ConnectTimeout
+            + ScrapeTimeouts.ArtifactBudget
+            + (BrowserProvider.CloseTimeout * 2)
+            + TimeSpan.FromSeconds(15));
 }
 
 /// <summary>
@@ -42,9 +48,15 @@ public sealed class RemoteScraperService(
     public const string ScrapeWorkerUrlKey = "SCRAPE_WORKER_URL";
     public const string HttpClientName = "ScrapeWorker";
 
-    private const string ScrapePath = "scrape";
-    private const string ScriptsPath = "scripts";
-    private const string HealthPath = "healthz";
+    /// <summary>
+    /// How much of a refusal's body goes into the Site Check's message.
+    /// </summary>
+    private const int MaxRefusalBodyLength = 500;
+
+    /// <summary>
+    /// How long evicting a script may take; the caller is a Site save or delete.
+    /// </summary>
+    private static readonly TimeSpan EvictTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly BrowserSelector _browserSelector = browserSelector;
@@ -74,8 +86,11 @@ public sealed class RemoteScraperService(
     {
         try
         {
+            // The client has no timeout of its own, so a worker that doesn't answer would hang the save.
+            using var timeout = new CancellationTokenSource(EvictTimeout, _timeProvider);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
             using var client = _httpClientFactory.CreateClient(HttpClientName);
-            using var response = await client.DeleteAsync($"{ScriptsPath}/{siteId}", cancellationToken);
+            using var response = await client.DeleteAsync($"{ScrapeWorkerPaths.Scripts}/{siteId}", linked.Token);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -100,10 +115,15 @@ public sealed class RemoteScraperService(
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
-            using var response = await client.PostAsJsonAsync(ScrapePath, request, ScrapeJson.Options, linked.Token);
+            using var response = await client.PostAsJsonAsync(ScrapeWorkerPaths.Scrape, request, ScrapeJson.Options, linked.Token);
             if (!response.IsSuccessStatusCode)
             {
+                // Capped: it becomes the Site Check's message and the failure notification.
                 var body = await response.Content.ReadAsStringAsync(linked.Token);
+                if (body.Length > MaxRefusalBodyLength)
+                {
+                    body = body[..MaxRefusalBodyLength] + "…";
+                }
                 return ScrapeResult.Unexpected(
                     $"The Scrape Worker refused the scrape ({(int)response.StatusCode} {response.StatusCode}): {body}");
             }
@@ -136,7 +156,7 @@ public sealed class RemoteScraperService(
             {
                 using var probeTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 probeTimeout.CancelAfter(_options.ReadinessPollInterval * 5);
-                using var response = await client.GetAsync(HealthPath, probeTimeout.Token);
+                using var response = await client.GetAsync(ScrapeWorkerPaths.Health, probeTimeout.Token);
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
                     return true;
@@ -167,12 +187,7 @@ public sealed class RemoteScraperService(
             return;
         }
 
-        using var scope = _scriptLogger.BeginScope(new Dictionary<string, object?>
-        {
-            ["SiteId"] = request.Site.Id,
-            ["SiteName"] = request.Site.Name,
-            ["SiteCheckId"] = request.SiteCheckId,
-        });
+        using var scope = _scriptLogger.BeginScrapeScope(request);
         foreach (var entry in result.Logs)
         {
             if (entry.Exception is null)
@@ -213,7 +228,7 @@ public static class RemoteScraperServiceExtensions
                 client.Timeout = Timeout.InfiniteTimeSpan;
             });
             services.AddSingleton(RemoteScraperOptions.Default);
-            services.AddSingleton<IScraperService, RemoteScraperService>();
+            services.Replace(ServiceDescriptor.Singleton<IScraperService, RemoteScraperService>());
             return true;
         }
     }

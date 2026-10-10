@@ -62,7 +62,9 @@ public sealed class ScriptExecutor(
         bool ownsScript;
         if (!request.IsTestRun && request.Site.Id is { } siteId)
         {
-            compiled = _cache.GetOrCompile(siteId, spec.SourceHash, spec.Source, spec.FileName);
+            // Keyed by the source's own hash rather than the request's, which may have crossed a
+            // process boundary: a request can't attach other source to a Site's cached hash.
+            compiled = _cache.GetOrCompile(siteId, ScriptSource.Hash(spec.Source), spec.Source, spec.FileName);
             ownsScript = false;
         }
         else
@@ -81,12 +83,7 @@ public sealed class ScriptExecutor(
 
         try
         {
-            using var scope = _scriptLogger.BeginScope(new Dictionary<string, object?>
-            {
-                ["SiteId"] = request.Site.Id,
-                ["SiteName"] = request.Site.Name,
-                ["SiteCheckId"] = request.SiteCheckId,
-            });
+            using var scope = _scriptLogger.BeginScrapeScope(request);
 
             var outcome = await compiled.Script.CreateInstance().RunAsync(new ScriptContext
             {

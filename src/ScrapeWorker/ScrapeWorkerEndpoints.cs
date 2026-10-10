@@ -14,9 +14,9 @@ namespace SiteChecker.ScrapeWorker;
 /// </summary>
 public static class ScrapeWorkerEndpoints
 {
-    public const string ScrapePath = "/scrape";
-    public const string ScriptsPath = "/scripts";
-    public const string HealthPath = "/healthz";
+    public const string ScrapePath = "/" + ScrapeWorkerPaths.Scrape;
+    public const string ScriptsPath = "/" + ScrapeWorkerPaths.Scripts;
+    public const string HealthPath = "/" + ScrapeWorkerPaths.Health;
 
     extension(WebApplication app)
     {

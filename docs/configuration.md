@@ -76,7 +76,9 @@ an existing deployment:
 
 The VPN container now gets only `PIA_USERNAME`, `PIA_PASSWORD` and `LOCAL_NETWORK` from `.env`. If you
 set other `thrnz/docker-wireguard-pia` options there, add them to its `environment` in
-`docker-compose.yml`.
+`docker-compose.yml`. The same goes for the app: it no longer reads `.env` wholesale, so any other
+setting you kept there for it (such as `PIA_CONTAINER_NAME`, `ASPNETCORE_ENVIRONMENT` or a
+`Logging__...` override) has to be added to the app's `environment`.
 
 ## Docker Services
 

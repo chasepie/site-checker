@@ -82,6 +82,14 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
    # Edit .env with your configuration. ADMIN_TOKEN and ALLOWED_HOSTS are required.
    ```
 
+   On Linux, also create the data directories for the app's non-root user (UID 1654), since Docker
+   would create them owned by root, and set `DOCKER_GID` in `.env` to the Docker socket's group
+   (`getent group docker | cut -d: -f3`). Docker Desktop needs neither.
+   ```bash
+   mkdir -p site-checker/data site-checker/logs site-checker/pia
+   sudo chown -R 1654 site-checker/
+   ```
+
 3. **Start all services**
    ```bash
    docker compose up

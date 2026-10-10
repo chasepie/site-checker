@@ -84,6 +84,9 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
   - Deviation: Compose passes `ADMIN_TOKEN` and `ALLOWED_HOSTS` with `:-`, not `:?`. `:?` failed every Compose command, including the VS Code task that starts only the browsers (`docker compose up -d browserless`). The app's own startup check reports a missing value instead (verified: "ADMIN_TOKEN must be set ..." in `docker logs`).
   - The admin token's wording now says Sites and Test Runs "upload or run a script" rather than "run code on the host", which stopped being true with the worker.
   - Final pass on the rebuilt stack (real Browserless, VPN stand-ins): from the UI, a Test Run of the Bot Detection demo asked for the admin token, ran in the worker, and showed "Succeeded in 2.0 s", "Test Results:Normal" and the screenshot over SignalR. CI build (locked restore, Release, 0 warnings), 235 tests and frontend lint pass.
+- [x] Code review (`/code-review --fix`, xhigh): 20 findings, 15 fixed. The ones that mattered: a run the app abandons by cancelling is now closed and tracked, so a stuck script can't outlive it; the app's response allowance is derived from the worker's limits (75 s); the worker's script cache is keyed by the hash of the source it compiles; fresh Linux installs get `mkdir`/`chown` steps; and `loc.txt` is replaced atomically. 239 tests pass.
+  - Open: the worker's `/scrape` has no authentication, so anything that reaches it (the Browserless containers, a LAN client with the Browserless token, DNS rebinding) runs code without the admin token. Next: a shared `SCRAPE_WORKER_SECRET`, host filtering on the worker, and unpublished Browserless ports.
+  - Next, on a stacked `login` branch: a single-user login replaces the admin token.
 - [ ] Remove `PLAN.md`, then open the PR
 
 ## Decisions

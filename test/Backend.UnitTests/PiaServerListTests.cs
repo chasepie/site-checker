@@ -58,6 +58,14 @@ public sealed class PiaServerListTests
     }
 
     [TestMethod]
+    [DataRow("""{"regions":[{"name":"US East","servers":{"wg":[{"ip":"1.2.3.6"}]}}]}""")]
+    [DataRow("""{"regions":[{"id":"us-newjersey","name":7,"servers":{"wg":[{"ip":"1.2.3.6"}]}}]}""")]
+    public void Parse_RejectsARegionWithoutAnIdOrName(string body)
+    {
+        Assert.Throws<JsonException>(() => PiaServerList.Parse(body));
+    }
+
+    [TestMethod]
     public async Task ListLocations_KeepsOnlyTheUsLocations()
     {
         var api = new FakeServerListApi(HttpStatusCode.OK, ServerList);

@@ -261,6 +261,27 @@ public sealed class ScraperServiceTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Cancellation_ClosesTheBrowser_AndTracksARunThatIsStillGoing()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var started = new TaskCompletionSource();
+        var service = CreateService(_ =>
+        {
+            started.SetResult();
+            _releaseBlockedExecutors.Wait(Ct);
+            return Task.FromResult(ScrapeResult.Succeeded("too late"));
+        });
+
+        var scrape = service.ScrapeAsync(Request(), cancellation.Token);
+        await started.Task.WaitAsync(Ct);
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => scrape);
+        await _session.Received().CloseAsync();
+        _abandonedRuns.Received(1).Track(Arg.Any<Task>(), Arg.Is<ScrapeRequest>(r => r.SiteCheckId == 7));
+    }
+
+    [TestMethod]
     public async Task RunThatEndsInTime_IsNotTrackedAsAbandoned()
     {
         var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));

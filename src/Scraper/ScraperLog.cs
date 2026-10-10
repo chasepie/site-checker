@@ -52,13 +52,25 @@ public sealed class ScraperLog
     /// </summary>
     public ILogger Wrap(ILogger inner) => new RecordingLogger(inner, this);
 
-    private void Add(LogLevel level, string message, Exception? exception)
+    private void Add<TState>(LogLevel level, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
+        // Once the log is full, count the entry without formatting it, so a script that logs in a
+        // loop doesn't pay for messages that are dropped anyway.
+        lock (_lock)
+        {
+            if (IsFull)
+            {
+                _dropped++;
+                return;
+            }
+        }
+
+        var message = formatter(state, exception);
         var exceptionText = exception?.ToString();
         var characters = message.Length + (exceptionText?.Length ?? 0);
         lock (_lock)
         {
-            if (_entries.Count >= MaxEntries || _characters + characters > MaxCharacters)
+            if (IsFull || _characters + characters > MaxCharacters)
             {
                 _dropped++;
                 return;
@@ -68,6 +80,11 @@ public sealed class ScraperLog
             _characters += characters;
         }
     }
+
+    /// <summary>
+    /// Whether no further entry can fit. Call under <see cref="_lock"/>.
+    /// </summary>
+    private bool IsFull => _entries.Count >= MaxEntries || _characters >= MaxCharacters;
 
     private sealed class RecordingLogger(ILogger inner, ScraperLog log) : ILogger
     {
@@ -88,7 +105,7 @@ public sealed class ScraperLog
             inner.Log(logLevel, eventId, state, exception, formatter);
             if (logLevel >= MinimumLevel && logLevel != LogLevel.None)
             {
-                log.Add(logLevel, formatter(state, exception), exception);
+                log.Add(logLevel, state, exception, formatter);
             }
         }
     }

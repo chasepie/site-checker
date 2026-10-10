@@ -31,7 +31,8 @@ public abstract record ScraperSpec;
 /// </summary>
 /// <param name="FileName">The uploaded file's name, used in compile errors and stack traces.</param>
 /// <param name="Source">The script's source.</param>
-/// <param name="SourceHash">Identifies the source, so an unchanged script's compile is reused.</param>
+/// <param name="SourceHash">The hash the app stored for the source. The executor caches compiles by
+/// the source's own hash, which matches it, rather than trusting this one.</param>
 public sealed record ScriptSpec(string FileName, string Source, string SourceHash) : ScraperSpec;
 
 /// <summary>

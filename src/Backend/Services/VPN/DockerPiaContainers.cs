@@ -98,7 +98,12 @@ public sealed class DockerPiaContainers : IPiaContainers, IDisposable
 
     public async Task SetLocationAndRestartAsync(string locationId, CancellationToken cancellationToken)
     {
-        await File.WriteAllTextAsync(_piaLocFilePath, locationId, cancellationToken);
+        // Replaced rather than rewritten: the VPN container creates loc.txt as root on its first
+        // start, and the app's non-root user can replace a file in a directory it owns but can't
+        // write to one it doesn't.
+        var tempPath = _piaLocFilePath + ".tmp";
+        await File.WriteAllTextAsync(tempPath, locationId, cancellationToken);
+        File.Move(tempPath, _piaLocFilePath, overwrite: true);
         await _dockerClient.Containers.RestartContainerAsync(_piaContainerName, new(), cancellationToken);
         await _dockerClient.Containers.RestartContainerAsync(_brwsrContainerName, new(), cancellationToken);
     }
