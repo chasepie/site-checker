@@ -269,7 +269,10 @@ export type SessionInfo = z.infer<typeof SessionInfo>;
 		);
 		await lastValueFrom(obs$);
 	}
-	/** Ends this browser's session. */
+	/**
+	* Ends this browser's session, and closes every live-update connection, which would otherwise
+	*             carry on with the login they started with. Browsers still logged in reconnect.
+	*/
 	public async logout() 
 	{
 		const obs$ = this._httpClient.request(

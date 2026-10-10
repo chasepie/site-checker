@@ -23,7 +23,17 @@ Checked against Microsoft's ASP.NET Core 10 docs (SignalR authn/authz and securi
   - `SESSION_DAYS` is read at startup (a bad value fails it), and the data directory moved to `AppDirectories.Data` (Utilities), shared by the database and the key store.
   - Tests write keys to a temporary directory. `UseEphemeralDataProtectionProvider` wasn't enough: data protection's startup service still created keys in `site-checker/data/keys` (12 stray key files, deleted; the folder is new on this branch).
   - The frontend still has the admin token prompt until phase 2, so the UI doesn't work at this commit.
-- [ ] 2. Frontend login
+- [x] 2. Frontend login
+  - Added beyond the plan: **a logout closes every live-update connection** (`HubConnections`, aborted from `AuthController.Logout`), and the browser checks its session as soon as the hub starts reconnecting. Without it, a tab open when you logged out elsewhere kept getting live updates on SignalR's cached login until the session's natural expiry (up to `SESSION_DAYS`). One user, so closing them all is right: a browser still logged in reconnects, and one that isn't goes to `/login`.
+  - The 401 interceptor is `sessionInterceptor`; the existing, unregistered `authInterceptor` (SignalR connection ID) is left alone.
+  - Verified in a browser against a published Production build (scratch data directory, demo Sites, Test Runs on the local Playwright server):
+    - a deep link to `/sites/2/edit` while logged out went to `/login?returnUrl=...`; a wrong password showed "That password is wrong."; the right one returned to the editor
+    - only `XSRF-TOKEN` is visible to page scripts (the session cookie is HttpOnly)
+    - a Test Run (a write with the antiforgery token, and the SignalR result) Succeeded
+    - after restarting the server, the session still worked (persisted keys)
+    - Log out went to `/login`, and the API answered 401 afterwards
+    - ending the session from outside the page, with no navigation, sent it to `/login?returnUrl=/history` about 100 ms later
+  - Not verified directly: a different browser whose session is still valid reconnecting after someone else logs out (the test browser's tabs share cookies).
 - [ ] 3. Compose, docs, ADR and a real-stack check
 - [ ] Remove `PLAN.md`, then open the PR
 

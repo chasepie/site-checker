@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using SiteChecker.Backend.Models;
 using SiteChecker.Backend.Services.Security;
+using SiteChecker.Backend.Services.SignalR;
 
 namespace SiteChecker.Backend.Controllers;
 
@@ -19,11 +20,13 @@ namespace SiteChecker.Backend.Controllers;
 [AllowAnonymous]
 public sealed class AuthController(
     AdminPassword adminPassword,
-    IAntiforgery antiforgery)
+    IAntiforgery antiforgery,
+    HubConnections hubConnections)
     : ControllerBase
 {
     private readonly AdminPassword _adminPassword = adminPassword;
     private readonly IAntiforgery _antiforgery = antiforgery;
+    private readonly HubConnections _hubConnections = hubConnections;
 
     /// <summary>
     /// Whether this browser is logged in. Also issues the antiforgery token for its next writes.
@@ -73,12 +76,14 @@ public sealed class AuthController(
     }
 
     /// <summary>
-    /// Ends this browser's session.
+    /// Ends this browser's session, and closes every live-update connection, which would otherwise
+    /// carry on with the login they started with. Browsers still logged in reconnect.
     /// </summary>
     [HttpPost("logout")]
     public async Task<ActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        _hubConnections.CloseAll();
         return NoContent();
     }
 

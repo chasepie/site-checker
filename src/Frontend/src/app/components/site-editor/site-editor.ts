@@ -427,8 +427,7 @@ export class SiteEditor {
     }
 
     if (error instanceof HttpErrorResponse && error.status === 401) {
-      this.errors.set(['Saving a Site or starting a Test Run needs the admin token.']);
-      this.diagnostics.set([]);
+      // The session ended; the session interceptor is already on its way to the login page.
       return;
     }
 

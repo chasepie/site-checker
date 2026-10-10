@@ -1,0 +1,19 @@
+<div class="login">
+  <form class="card login-card" (ngSubmit)="submit()">
+    <div class="card-body">
+      <h2 class="h4 card-title mb-3">Log in to Site Checker</h2>
+      <label for="password" class="form-label">Password</label>
+      <input id="password" name="password" type="password" class="form-control" autocomplete="current-password"
+        [ngModel]="password()" (ngModelChange)="password.set($event)" [disabled]="busy()" required>
+      @if (error(); as message) {
+      <div class="alert alert-danger mt-3 mb-0" role="alert">{{ message }}</div>
+      }
+      <button type="submit" class="btn btn-primary w-100 mt-3" [disabled]="busy() || !password().trim()">
+        @if (busy()) {
+        <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+        }
+        Log in
+      </button>
+    </div>
+  </form>
+</div>

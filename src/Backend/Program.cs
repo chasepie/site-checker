@@ -70,6 +70,7 @@ public class Program
                 SetJsonOptions(options.JsonSerializerOptions);
             });
 
+        services.AddSingleton<HubConnections>();
         services
             .AddSignalR(options =>
             {
