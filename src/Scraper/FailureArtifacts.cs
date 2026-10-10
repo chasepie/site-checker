@@ -6,15 +6,14 @@ namespace SiteChecker.Scraper;
 
 /// <summary>
 /// Writes the page's HTML and the exception behind an Unexpected Failure to the logs directory
-/// (<c>site-checker/logs</c>, or <c>logs</c> next to the app in Docker), named
-/// <c>{SiteCheckId}_{SiteId}</c>.
+/// (<see cref="AppDirectories.Logs"/>), named <c>{SiteCheckId}_{SiteId}</c>.
 /// </summary>
 public sealed class FailureArtifacts
 {
     private readonly ILogger<FailureArtifacts> _logger;
 
     public FailureArtifacts(ILogger<FailureArtifacts> logger)
-        : this(logger, DefaultLogsDirectory())
+        : this(logger, AppDirectories.Logs)
     {
     }
 
@@ -84,15 +83,5 @@ public sealed class FailureArtifacts
             }
         }
         return sb.ToString();
-    }
-
-    private static string DefaultLogsDirectory()
-    {
-        if (!EnvironmentUtils.IsDockerContainer()
-            && RepoUtils.TryGetRepoDirectory(out var repoRoot))
-        {
-            return Path.Join(repoRoot, "site-checker/logs");
-        }
-        return Path.Join(AppContext.BaseDirectory, "logs");
     }
 }
