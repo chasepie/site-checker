@@ -52,7 +52,9 @@ export class Login implements OnInit {
   /**
    * The return URL if it's on this site, so a crafted link can't send you elsewhere after logging
    * in. Resolving it against this origin catches what prefix checks miss, such as `/\evil.com`,
-   * which browsers treat as `//evil.com`.
+   * which browsers treat as `//evil.com`. It returns the resolved absolute URL, never just its path:
+   * `/.//evil.com` resolves on this origin to the path `//evil.com`, which leaves the site if it's
+   * loaded on its own.
    */
   private safeReturnUrl() {
     const url = this.returnUrl();
@@ -61,8 +63,7 @@ export class Login implements OnInit {
     }
     try {
       const resolved = new URL(url, window.location.origin);
-      const path = resolved.pathname + resolved.search + resolved.hash;
-      return resolved.origin === window.location.origin && !resolved.pathname.startsWith('/login') ? path : '/';
+      return resolved.origin === window.location.origin && !resolved.pathname.startsWith('/login') ? resolved.href : '/';
     } catch {
       return '/';
     }
