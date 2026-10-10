@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -79,6 +80,19 @@ public static class SecurityExtensions
                     // which reads returnUrl.
                     options.LoginPath = "/login";
                     options.ReturnUrlParameter = "returnUrl";
+
+                    // The keys outlive a password change, so without this a session made with the
+                    // old password would keep working, renewed on every visit.
+                    options.Events.OnValidatePrincipal = async context =>
+                    {
+                        var adminPassword = context.HttpContext.RequestServices.GetRequiredService<AdminPassword>();
+                        if (adminPassword.IsRequired
+                            && !adminPassword.IsCurrentSessionStamp(context.Principal?.FindFirst(AdminPassword.SessionStampClaim)?.Value))
+                        {
+                            context.RejectPrincipal();
+                            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                        }
+                    };
                 });
 
             services.AddSingleton<IAuthorizationHandler, LoggedInHandler>();

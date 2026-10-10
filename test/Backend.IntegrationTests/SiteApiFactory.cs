@@ -25,14 +25,18 @@ using SiteChecker.Scraper;
 /// <param name="environment">The host environment; Development unless a test needs another.</param>
 /// <param name="settings">Configuration that replaces the factory's defaults, such as
 /// <c>ADMIN_PASSWORD</c>; a <c>null</c> value clears the setting.</param>
+/// <param name="keysDirectory">A key store to share with another factory, as a restart would keep
+/// the data directory; the caller deletes it. By default each factory has its own.</param>
 internal sealed class SiteApiFactory(
     string? environment = null,
-    IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
+    IReadOnlyDictionary<string, string?>? settings = null,
+    string? keysDirectory = null) : WebApplicationFactory<Program>
 {
     public const string Password = "test-password";
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
-    private readonly string _keysDirectory = Path.Combine(Path.GetTempPath(), $"site-checker-keys-{Guid.NewGuid():N}");
+    private readonly string _keysDirectory = keysDirectory ?? Path.Combine(Path.GetTempPath(), $"site-checker-keys-{Guid.NewGuid():N}");
+    private readonly bool _ownsKeysDirectory = keysDirectory is null;
     private readonly string _environment = environment ?? Environments.Development;
     private readonly Dictionary<string, string?> _settings = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -108,7 +112,7 @@ internal sealed class SiteApiFactory(
         if (disposing)
         {
             _connection.Dispose();
-            if (Directory.Exists(_keysDirectory))
+            if (_ownsKeysDirectory && Directory.Exists(_keysDirectory))
             {
                 Directory.Delete(_keysDirectory, recursive: true);
             }

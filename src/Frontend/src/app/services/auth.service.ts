@@ -3,9 +3,15 @@ import { Router } from '@angular/router';
 import { AuthController } from '../generated/model';
 import { SignalrService } from './signalr.service';
 
+/** Delays before each attempt to reconnect the hub after it closes for good. */
+const RECONNECT_DELAYS_MS = [0, 2_000, 10_000, 30_000];
+
 /**
  * The login session. The server keeps it in an HttpOnly cookie; this tracks whether there is one,
  * and starts and stops the SignalR connection with it, since the hub requires a login.
+ *
+ * Every session boundary (login, logout, the session ending) reloads the page, so no data loaded
+ * under one session lingers in the stores under the next.
  */
 @Injectable({
   providedIn: 'root'
@@ -14,16 +20,17 @@ export class AuthService {
   private readonly _controller = inject(AuthController);
   private readonly _signalr = inject(SignalrService);
   private readonly _router = inject(Router);
+  private _loggingOut = false;
 
   /** `false` only in Development without `ADMIN_PASSWORD`, where login is off. */
   public readonly loginRequired = signal(true);
   public readonly loggedIn = signal(false);
 
   constructor() {
-    // The server drops every connection on any logout. Check at once rather than wait out the
-    // reconnect delays: a browser still logged in carries on reconnecting; one that isn't, stops.
+    // Any logout closes every connection on the server. A browser still logged in reconnects;
+    // one that isn't goes to the login page.
     this._signalr.onReconnecting(() => void this.checkSessionStillOpen());
-    this._signalr.onClose(() => void this.checkSessionStillOpen());
+    this._signalr.onClose(() => void this.reconnectIfStillLoggedIn());
   }
 
   /** Reads the session from the server, which also issues the antiforgery token for writes. */
@@ -41,18 +48,14 @@ export class AuthService {
     }
   }
 
-  /** Logs in, refreshes the session (and its antiforgery token) and connects to the hub. */
+  /** Logs in. The caller then loads the page it's going to, which starts the hub. */
   public async login(password: string) {
     await this._controller.login({ password });
-    await this.refresh();
-    await this._signalr.start();
   }
 
-  /**
-   * Ends the session and reloads at the login page, so nothing loaded while logged in stays in
-   * memory.
-   */
+  /** Ends the session and reloads at the login page. */
   public async logout() {
+    this._loggingOut = true;
     try {
       await this._signalr.stop();
       await this._controller.logout();
@@ -61,22 +64,45 @@ export class AuthService {
     }
   }
 
-  /** After the server answers 401: the session ended, so go log in again. */
-  public async sessionEnded() {
+  /** After the server answers 401: the session ended, so reload at the login page. */
+  public sessionEnded() {
     this.loggedIn.set(false);
-    await this._signalr.stop();
-    if (!this._router.url.startsWith('/login')) {
-      await this._router.navigate(['/login'], { queryParams: { returnUrl: this._router.url } });
+    const current = this._router.url;
+    if (!current.startsWith('/login')) {
+      window.location.assign(`/login?returnUrl=${encodeURIComponent(current)}`);
     }
   }
 
   private async checkSessionStillOpen() {
     try {
       if (!await this.refresh()) {
-        await this.sessionEnded();
+        this.sessionEnded();
       }
     } catch {
-      // The server is unreachable; the next request will tell.
+      // The server is unreachable; reconnecting carries on, and the next request will tell.
+    }
+  }
+
+  /**
+   * The hub closed for good: the server closes connections on any logout, which also stops
+   * automatic reconnecting. Starts it again while the session is still valid.
+   */
+  private async reconnectIfStillLoggedIn() {
+    for (const delay of RECONNECT_DELAYS_MS) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      if (this._loggingOut) {
+        return;
+      }
+      try {
+        if (!await this.refresh()) {
+          this.sessionEnded();
+          return;
+        }
+        await this._signalr.start();
+        return;
+      } catch {
+        // The server is unreachable or restarting; try again after the next delay.
+      }
     }
   }
 }

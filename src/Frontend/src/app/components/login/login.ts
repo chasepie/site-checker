@@ -1,7 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject, input, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
@@ -13,7 +12,6 @@ import { AuthService } from '../../services/auth.service';
 })
 export class Login implements OnInit {
   private readonly _auth = inject(AuthService);
-  private readonly _router = inject(Router);
 
   /** Where to go after logging in, from the query string. */
   public readonly returnUrl = input<string>();
@@ -25,7 +23,7 @@ export class Login implements OnInit {
   /** Logged in already, or login is off (Development): nothing to do here. */
   public ngOnInit() {
     if (this._auth.loggedIn()) {
-      void this._router.navigateByUrl(this.safeReturnUrl());
+      window.location.assign(this.safeReturnUrl());
     }
   }
 
@@ -39,19 +37,35 @@ export class Login implements OnInit {
     this.error.set(null);
     try {
       await this._auth.login(password);
-      await this._router.navigateByUrl(this.safeReturnUrl());
     } catch (error) {
       this.error.set(describe(error));
       this.password.set('');
-    } finally {
       this.busy.set(false);
+      return;
     }
+
+    // A full page load rather than the router: the return URL may be a server page (Scalar), and
+    // the app starts fresh under the new session.
+    window.location.assign(this.safeReturnUrl());
   }
 
-  /** Only a path in this app, so a crafted link can't send you elsewhere after logging in. */
+  /**
+   * The return URL if it's on this site, so a crafted link can't send you elsewhere after logging
+   * in. Resolving it against this origin catches what prefix checks miss, such as `/\evil.com`,
+   * which browsers treat as `//evil.com`.
+   */
   private safeReturnUrl() {
     const url = this.returnUrl();
-    return url?.startsWith('/') && !url.startsWith('//') && !url.startsWith('/login') ? url : '/';
+    if (!url) {
+      return '/';
+    }
+    try {
+      const resolved = new URL(url, window.location.origin);
+      const path = resolved.pathname + resolved.search + resolved.hash;
+      return resolved.origin === window.location.origin && !resolved.pathname.startsWith('/login') ? path : '/';
+    } catch {
+      return '/';
+    }
   }
 }
 

@@ -13,11 +13,11 @@ namespace SiteChecker.Backend.Controllers;
 
 /// <summary>
 /// The login. There's one password (<c>ADMIN_PASSWORD</c>) and no users; a login is a session
-/// cookie that every other endpoint requires.
+/// cookie that every other endpoint requires. Only the session check and the login itself are open;
+/// logging out needs a login, like everything else.
 /// </summary>
 [Route("api/[controller]")]
 [ApiController]
-[AllowAnonymous]
 public sealed class AuthController(
     AdminPassword adminPassword,
     IAntiforgery antiforgery,
@@ -32,6 +32,7 @@ public sealed class AuthController(
     /// Whether this browser is logged in. Also issues the antiforgery token for its next writes.
     /// </summary>
     [HttpGet("session")]
+    [AllowAnonymous]
     public ActionResult<SessionInfo> GetSession()
     {
         IssueAntiforgeryToken();
@@ -46,6 +47,7 @@ public sealed class AuthController(
     /// Logs in with the password. A wrong one gets 401; too many attempts in a minute get 429.
     /// </summary>
     [HttpPost("login")]
+    [AllowAnonymous]
     // Forging a login to the only account gains an attacker nothing, and requiring a token here
     // would mean fetching one before every login.
     [IgnoreAntiforgeryToken]
@@ -62,7 +64,10 @@ public sealed class AuthController(
         }
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "admin")],
+            [
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(AdminPassword.SessionStampClaim, _adminPassword.SessionStamp!),
+            ],
             CookieAuthenticationDefaults.AuthenticationScheme));
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -77,7 +82,8 @@ public sealed class AuthController(
 
     /// <summary>
     /// Ends this browser's session, and closes every live-update connection, which would otherwise
-    /// carry on with the login they started with. Browsers still logged in reconnect.
+    /// carry on with the login they started with. Browsers still logged in reconnect. Needs a login,
+    /// so a stranger can't close everyone's connections.
     /// </summary>
     [HttpPost("logout")]
     public async Task<ActionResult> Logout()

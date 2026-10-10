@@ -20,7 +20,7 @@ export const sessionInterceptor: HttpInterceptorFn = (req, next) => {
   return next(req).pipe(
     catchError((error: unknown) => {
       if (error instanceof HttpErrorResponse && error.status === 401) {
-        void auth.sessionEnded();
+        auth.sessionEnded();
       }
       return throwError(() => error);
     }),

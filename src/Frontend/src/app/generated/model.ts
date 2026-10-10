@@ -237,7 +237,8 @@ export type SessionInfo = z.infer<typeof SessionInfo>;
 
 /**
 * The login. There's one password (<c>ADMIN_PASSWORD</c>) and no users; a login is a session
-*             cookie that every other endpoint requires.
+*             cookie that every other endpoint requires. Only the session check and the login itself are open;
+*             logging out needs a login, like everything else.
 */
 @Injectable({ providedIn: 'root'}) export class AuthController
 {
@@ -271,7 +272,8 @@ export type SessionInfo = z.infer<typeof SessionInfo>;
 	}
 	/**
 	* Ends this browser's session, and closes every live-update connection, which would otherwise
-	*             carry on with the login they started with. Browsers still logged in reconnect.
+	*             carry on with the login they started with. Browsers still logged in reconnect. Needs a login,
+	*             so a stranger can't close everyone's connections.
 	*/
 	public async logout() 
 	{

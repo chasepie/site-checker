@@ -15,6 +15,11 @@ public sealed class AdminPassword(IConfiguration configuration, IHostEnvironment
 {
     public const string AdminPasswordKey = "ADMIN_PASSWORD";
 
+    /// <summary>
+    /// The session claim holding <see cref="SessionStamp"/>.
+    /// </summary>
+    public const string SessionStampClaim = "session-stamp";
+
     private readonly byte[]? _passwordHash = HashConfiguredPassword(configuration, environment, logger);
 
     /// <summary>
@@ -28,6 +33,24 @@ public sealed class AdminPassword(IConfiguration configuration, IHostEnvironment
     /// </summary>
     public bool Matches(string candidate)
         => _passwordHash is not null && CryptographicOperations.FixedTimeEquals(_passwordHash, Hash(candidate));
+
+    /// <summary>
+    /// A value derived from the password, put in every session when it's created, so changing the
+    /// password ends every session made with the old one (<see cref="IsCurrentSessionStamp"/>). The
+    /// session cookie is encrypted, so the stamp isn't readable outside the app. <c>null</c> when no
+    /// password is required.
+    /// </summary>
+    public string? SessionStamp => _passwordHash is null
+        ? null
+        : Convert.ToBase64String(SHA256.HashData([.. "SiteChecker session stamp\n"u8, .. _passwordHash]));
+
+    /// <summary>
+    /// Whether a session's stamp was made with the current password.
+    /// </summary>
+    public bool IsCurrentSessionStamp(string? stamp)
+        => SessionStamp is { } current
+            && stamp is not null
+            && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(current), Encoding.UTF8.GetBytes(stamp));
 
     /// <summary>
     /// The configured password's hash, or <c>null</c> when Development leaves it unset. Trimmed, like
