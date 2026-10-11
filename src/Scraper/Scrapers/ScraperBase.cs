@@ -73,18 +73,7 @@ public abstract class ScraperBase(ILogger logger) : IScraper
     {
         request.LogError(Logger, "Scraping failed", ex);
 
-        string logsDir;
-
-        if (!EnvironmentUtils.IsDockerContainer()
-            && RepoUtils.TryGetRepoDirectory(out var repoRoot))
-        {
-            logsDir = Path.Join(repoRoot, "site-checker/logs");
-        }
-        else
-        {
-            logsDir = Path.Join(AppContext.BaseDirectory, "logs");
-        }
-
+        var logsDir = AppDirectories.Logs;
         if (!Directory.Exists(logsDir))
         {
             Directory.CreateDirectory(logsDir);

@@ -23,16 +23,7 @@ public class PiaService : IDisposable
         _piaContainerName = configuration[PIA_CONTAINER_NAME] ?? "/site-checker-vpn";
         _brwsrContainerName = configuration[BROWSERLESS_VPN_CONTAINER_NAME] ?? "/site-checker-browserless-vpn";
 
-        string piaDir;
-        if (!EnvironmentUtils.IsDockerContainer() && RepoUtils.TryGetRepoDirectory(out var repoDir))
-        {
-            piaDir = Path.Join(repoDir, "site-checker/pia");
-        }
-        else
-        {
-            piaDir = "/pia";
-        }
-        _piaLocFilePath = Path.Join(piaDir, "loc.txt");
+        _piaLocFilePath = Path.Join(AppDirectories.Pia, "loc.txt");
     }
 
     public async Task<PiaLocation> ChangeLocationAsync(
