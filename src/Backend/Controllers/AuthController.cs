@@ -104,6 +104,7 @@ public sealed class AuthController(
     /// Sets the antiforgery cookie pair: the HttpOnly cookie token, and the request token in a
     /// cookie the page reads and sends back as <see cref="SecurityExtensions.AntiforgeryHeaderName"/>.
     /// </summary>
+    // TODO(.NET 11): Goes away with the token (see ValidateAntiforgeryFilter).
     private void IssueAntiforgeryToken()
     {
         var tokens = _antiforgery.GetAndStoreTokens(HttpContext);

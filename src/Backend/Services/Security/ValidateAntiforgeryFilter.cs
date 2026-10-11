@@ -10,6 +10,14 @@ namespace SiteChecker.Backend.Services.Security;
 /// <see cref="IgnoreAntiforgeryTokenAttribute"/>. MVC's own <c>AutoValidateAntiforgeryToken</c>
 /// needs the Razor view services, which this API doesn't register.
 /// </summary>
+/// <remarks>
+/// TODO(.NET 11): The automatic CSRF protection checks <c>Sec-Fetch-Site</c> (else
+/// <c>Origin</c>) on every request without tokens, but only records a verdict, which nothing
+/// enforces for JSON or bodiless actions like ours. Reject when that verdict
+/// (<c>IAntiforgeryValidationFeature</c>) is invalid instead of checking the token, then remove the
+/// token handling (see <c>AddLogin</c> and <c>AuthController.IssueAntiforgeryToken</c>). Keep this
+/// filter's method and opt-out rules.
+/// </remarks>
 public sealed class ValidateAntiforgeryFilter(IAntiforgery antiforgery) : IAsyncAuthorizationFilter
 {
     private readonly IAntiforgery _antiforgery = antiforgery;

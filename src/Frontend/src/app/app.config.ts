@@ -10,6 +10,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withComponentInputBinding()),
     // Also sends X-XSRF-TOKEN from the XSRF-TOKEN cookie on writes, which the server requires.
+    // TODO(.NET 11): Once the server checks Sec-Fetch-Site instead of the token, add withNoXsrfProtection().
     provideHttpClient(withInterceptors([sessionInterceptor])),
     provideAppInitializer(async () => {
       // Reads the session (and the antiforgery token) before any route guard runs.

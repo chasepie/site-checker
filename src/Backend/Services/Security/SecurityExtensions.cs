@@ -109,13 +109,21 @@ public static class SecurityExtensions
                     };
                 });
 
-            services.AddSingleton<IAuthorizationHandler, LoggedInHandler>();
+            services.AddAuthorization();
             services
-                .AddAuthorizationBuilder()
-                .SetFallbackPolicy(new AuthorizationPolicyBuilder()
-                    .AddRequirements(new LoggedInRequirement())
-                    .Build());
+                .AddOptions<AuthorizationOptions>()
+                .Configure<AdminPassword>((options, adminPassword) =>
+                {
+                    // With no password required (Development), there's no fallback policy, so
+                    // everything is open.
+                    options.FallbackPolicy = adminPassword.IsRequired
+                        ? new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build()
+                        : null;
+                });
 
+            // TODO(.NET 11): Replace the token with the automatic CSRF protection's Sec-Fetch-Site
+            // verdict (see ValidateAntiforgeryFilter), and drop this, the XSRF-TOKEN cookie and the
+            // header that the frontend sends.
             services.AddAntiforgery(options =>
             {
                 options.HeaderName = AntiforgeryHeaderName;
@@ -234,24 +242,5 @@ public static class SecurityExtensions
                 $"{SessionDaysKey} must be a whole number of days from 1 to {MaxSessionDays}, but is '{value}'.");
         }
         return days;
-    }
-}
-
-/// <summary>
-/// The fallback policy's requirement: logged in, or no password required (Development).
-/// </summary>
-public sealed class LoggedInRequirement : IAuthorizationRequirement;
-
-public sealed class LoggedInHandler(AdminPassword adminPassword) : AuthorizationHandler<LoggedInRequirement>
-{
-    private readonly AdminPassword _adminPassword = adminPassword;
-
-    protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, LoggedInRequirement requirement)
-    {
-        if (!_adminPassword.IsRequired || context.User.Identity?.IsAuthenticated == true)
-        {
-            context.Succeed(requirement);
-        }
-        return Task.CompletedTask;
     }
 }
