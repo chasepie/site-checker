@@ -11,7 +11,7 @@ namespace SiteChecker.Backend.Services.Security;
 /// Constructing it throws <see cref="InvalidOperationException"/> when the password isn't set
 /// outside Development, so startup fails.
 /// </remarks>
-public sealed class AdminPassword(IConfiguration configuration, IHostEnvironment environment, ILogger<AdminPassword> logger)
+public sealed class AdminPassword
 {
     public const string AdminPasswordKey = "ADMIN_PASSWORD";
 
@@ -20,8 +20,19 @@ public sealed class AdminPassword(IConfiguration configuration, IHostEnvironment
     /// </summary>
     public const string SessionStampClaim = "session-stamp";
 
-    private readonly byte[]? _passwordHash = HashConfiguredPassword(configuration, environment, logger);
+    private readonly byte[]? _passwordHash;
+    private readonly IConfiguration configuration;
+    private readonly IHostEnvironment environment;
+    private readonly ILogger<AdminPassword> logger;
     private string? _sessionStamp;
+
+    public AdminPassword(IConfiguration configuration, IHostEnvironment environment, ILogger<AdminPassword> logger)
+    {
+        this.configuration = configuration;
+        this.environment = environment;
+        this.logger = logger;
+        _passwordHash = HashConfiguredPassword();
+    }
 
     /// <summary>
     /// Whether logging in is required. Only Development runs without a password.
@@ -58,7 +69,7 @@ public sealed class AdminPassword(IConfiguration configuration, IHostEnvironment
     /// The configured password's hash, or <c>null</c> when Development leaves it unset. Trimmed, like
     /// the login page trims what it's given, so stray whitespace in <c>.env</c> can't lock you out.
     /// </summary>
-    private static byte[]? HashConfiguredPassword(IConfiguration configuration, IHostEnvironment environment, ILogger logger)
+    private byte[]? HashConfiguredPassword()
     {
         var password = configuration[AdminPasswordKey]?.Trim();
         if (!string.IsNullOrEmpty(password))

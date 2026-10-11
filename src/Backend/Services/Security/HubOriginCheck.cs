@@ -31,7 +31,9 @@ public static class HubOriginCheck
                 context => context.Request.Path.StartsWithSegments(hubPath),
                 branch => branch.Use(async (context, next) =>
                 {
-                    var allowedHosts = context.RequestServices.GetRequiredService<IOptions<HostFilteringOptions>>().Value.AllowedHosts;
+                    var allowedHosts = context.RequestServices
+                        .GetRequiredService<IOptions<HostFilteringOptions>>()
+                        .Value.AllowedHosts;
                     var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
                     var origin = context.Request.Headers.Origin.ToString();
                     if ((fetchSite.Length > 0 && fetchSite != "same-origin")
