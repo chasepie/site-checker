@@ -18,6 +18,11 @@
         </li>
         }
       </ul>
+      @if (auth.loginRequired() && auth.loggedIn()) {
+      <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" (click)="logout()">
+        <i class="bi bi-box-arrow-right"></i> Log out
+      </button>
+      }
     </div>
   </div>
 </nav>
@@ -35,5 +40,10 @@
       </li>
       }
     </ul>
+    @if (auth.loginRequired() && auth.loggedIn()) {
+    <button type="button" class="btn btn-outline-secondary btn-sm mt-3" (click)="logout()">
+      <i class="bi bi-box-arrow-right"></i> Log out
+    </button>
+    }
   </div>
 </ng-template>
