@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Reinforced.Typings.Ast.TypeNames;
 using Reinforced.Typings.Fluent;
+using SiteChecker.Backend.Models;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
@@ -69,7 +70,9 @@ public static partial class ReinforcedTypingsConfiguration
             typeof(SiteUpdate),
             typeof(SiteCheck),
             typeof(Site),
-            typeof(SiteCheckScreenshot)
+            typeof(SiteCheckScreenshot),
+            typeof(LoginRequest),
+            typeof(SessionInfo),
         };
         builder.ExportAsInterfaces(dbClasses, builder =>
         {
