@@ -27,6 +27,12 @@ public sealed class ScraperServiceTests : IDisposable
     /// </summary>
     private static readonly TimeSpan ShortTimeout = TimeSpan.FromMilliseconds(200);
 
+    /// <summary>
+    /// The deadline's timer runs on a coarse clock, so it can fire up to one tick (about 15.6 ms on
+    /// Windows) before the stopwatch that measures <see cref="ScrapeResult.Duration"/> says it's due.
+    /// </summary>
+    private static readonly TimeSpan TimerTolerance = TimeSpan.FromMilliseconds(16);
+
     private readonly IPage _page = Substitute.For<IPage>();
     private readonly IBrowserSession _session = Substitute.For<IBrowserSession>();
     private readonly IBrowserProvider _browsers = Substitute.For<IBrowserProvider>();
@@ -328,7 +334,7 @@ public sealed class ScraperServiceTests : IDisposable
     {
         Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
         Assert.AreEqual("Timed out after 0.2 s.", result.Message);
-        Assert.IsGreaterThanOrEqualTo(ShortTimeout, result.Duration);
+        Assert.IsGreaterThanOrEqualTo(ShortTimeout - TimerTolerance, result.Duration);
         CollectionAssert.AreEqual(ScreenshotBytes, result.Screenshot);
         _session.Received().CloseAsync();
     }
