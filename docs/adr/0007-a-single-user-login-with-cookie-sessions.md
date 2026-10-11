@@ -16,8 +16,8 @@ We chose this because ADR 0006's admin token gated only uploading and running sc
 
 ## Considered Options
 
-- **Users, roles, OAuth or OIDC, passkeys, two-factor** (as in Komodo). Built for many users and an admin; SiteChecker has one. Single sign-on, if ever wanted, fits better as a login proxy (Authentik, Tailscale) in front of the app.
-- **A token in browser storage, sent as a header** (also Komodo's approach). It needs no antiforgery. But browsers can't set headers on WebSockets, so SignalR would send the token in the URL, where servers log it, and page scripts could read it. Microsoft recommends cookies when the browser is the only client.
+- **Users, roles, OAuth or OIDC, passkeys, two-factor**. Built for many users and an admin; SiteChecker has one. Single sign-on, if ever wanted, fits better as a login proxy (Authentik, Tailscale) in front of the app.
+- **A token in browser storage, sent as a header**. It needs no antiforgery. But browsers can't set headers on WebSockets, so SignalR would send the token in the URL, where servers log it, and page scripts could read it. Microsoft recommends cookies when the browser is the only client.
 - **Keeping `ADMIN_TOKEN` as an API key.** Nothing calls the API outside the browser. If automation is ever needed, it should get separate, expiring keys, not the login password.
 
 ## Consequences
