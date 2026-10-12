@@ -36,12 +36,17 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 │              Backend (ASP.NET Core)                     │
 │  API Server, Scraping Orchestration, VPN Management     │
 └─┬────────────┬───────────────────────┬──────────────────┘
-  │            │                       │
+  │            │                       │ HTTP
   ▼            ▼                       ▼
 ┌────────┐  ┌─────────────┐   ┌──────────────────────┐
-│Database│  │  Notifiers  │   │   Browserless        │
-│(SQLite)│  │Push/Discord │   │Standard & VPN-routed │
-└────────┘  └─────────────┘   └──────────────────────┘
+│Database│  │  Notifiers  │   │    Scrape Worker     │
+│(SQLite)│  │Push/Discord │   │  runs every script   │
+└────────┘  └─────────────┘   └──────────┬───────────┘
+                                         │ CDP
+                              ┌──────────▼───────────┐
+                              │     Browserless      │
+                              │Standard & VPN-routed │
+                              └──────────────────────┘
 ```
 
 ### Components
@@ -50,6 +55,7 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 - **Database** — EF Core models, migrations, and services using SQLite
 - **Frontend** — Angular 21 SPA for monitoring and managing site checks
 - **Scraper** — The shared scrape pipeline (browser, navigation, timeout, screenshots) and the runtime script compiler
+- **ScrapeWorker** — Runs the scrape pipeline, and so every uploaded script, in its own container, away from the app's secrets and database
 - **Scripting** — `SiteChecker.Scripting`, the contract scripts compile against, published as a NuGet package
 - **Notifiers** — Pushover and Discord notification implementations
 
@@ -126,11 +132,14 @@ enforces, and how to set up an authoring project with the `SiteChecker.Scripting
 
 ## Security
 
-The app is behind a single-user login (`ADMIN_PASSWORD`), but uploaded scripts run inside the app
-with access to the Docker socket, so **anyone who can log in can run code on its host**. The login is
-one shared password, so keep the app on trusted networks (a home LAN, a private VPN like Tailscale),
-and don't expose it to the internet without a reverse proxy that adds HTTPS and its own login (list
-it in `TRUSTED_PROXIES`). See [docs/configuration.md](docs/configuration.md#trust-boundary).
+The app is behind a single-user login (`ADMIN_PASSWORD`). Uploaded scripts run unsandboxed, but in
+the Scrape Worker container: it has no secrets but the Browserless token, no volumes, no Docker
+access and no route out except through the browsers. The app reaches Docker only through a socket
+proxy that can do nothing but restart the VPN containers.
+
+The login is one shared password, so keep the app on trusted networks (a home LAN, a private VPN like
+Tailscale), and don't expose it to the internet without a reverse proxy that adds HTTPS and its own
+login (list it in `TRUSTED_PROXIES`). See [docs/configuration.md](docs/configuration.md#trust-boundary).
 
 ## Technology Stack
 

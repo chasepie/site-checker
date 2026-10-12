@@ -79,7 +79,11 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
     - it can read the app's API, and a gated write gets 401
     - a `while (true) { }` script with a 3 s timeout failed "Timed out after 3 s.", and the worker logged Critical 15 s later and stopped. Docker restarted it (RestartCount 1), the app logged "Waiting for the Scrape Worker to report healthy", and the next queued check Succeeded, 22 s after both were queued.
   - Found, not fixed: a `DISCORD_TOKEN` that isn't a valid bot token makes NetCord fail host startup. On the way down, `SiteCheckTimer` then hit an `ObjectDisposedException` on the runner's create lock (`SiteCheckRunner.cs:161`), a shutdown race that predates this work.
-- [ ] 9. ADR, docs and end-to-end check
+- [x] 9. ADR, docs and end-to-end check
+  - Added ADR 0006 and marked 0004 superseded. Updated `CLAUDE.md`, `GLOSSARY.md` (Scrape Worker), `README.md` (diagram, components, security), `docs/configuration.md` (trust boundary rewritten), `docs/local-development.md` (running the worker locally) and `example.env`.
+  - Deviation: Compose passes `ADMIN_TOKEN` and `ALLOWED_HOSTS` with `:-`, not `:?`. `:?` failed every Compose command, including the VS Code task that starts only the browsers (`docker compose up -d browserless`). The app's own startup check reports a missing value instead (verified: "ADMIN_TOKEN must be set ..." in `docker logs`).
+  - The admin token's wording now says Sites and Test Runs "upload or run a script" rather than "run code on the host", which stopped being true with the worker.
+  - Final pass on the rebuilt stack (real Browserless, VPN stand-ins): from the UI, a Test Run of the Bot Detection demo asked for the admin token, ran in the worker, and showed "Succeeded in 2.0 s", "Test Results:Normal" and the screenshot over SignalR. CI build (locked restore, Release, 0 warnings), 235 tests and frontend lint pass.
 - [ ] Remove `PLAN.md`, then open the PR
 
 ## Decisions

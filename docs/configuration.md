@@ -67,15 +67,21 @@ outside the browser now needs a login.
 
 ## Trust boundary
 
-**Anyone who can log in to Site Checker can run code on its host.** Saving a Site or starting a
-Test Run accepts C# source that runs inside the app, unsandboxed (see
-[ADR 0004](adr/0004-scripts-run-in-process-behind-a-trust-boundary.md)). A script can read the database
-file and the app's environment variables. The app reaches Docker only through a socket proxy that
-allows inspecting the Browserless VPN container and restarting the two VPN containers, so a script
-can't start containers, but it can restart those two.
+Saving a Site or starting a Test Run uploads C# source that runs unsandboxed. With Docker Compose it
+runs in the **Scrape Worker** container, not in the app (see
+[ADR 0007](adr/0007-scripts-run-in-an-isolated-scrape-worker.md)). The worker has no secrets but the
+Browserless token, no volumes, no access to Docker, and no route to the internet except through the
+browsers. So a script can't read the database, the notification tokens or the PIA credentials, and
+can't start containers.
 
-So the password is the key to running code: use a long random one, and keep the app on networks you
-trust (see [Login](#login)).
+What's still exposed:
+
+- **The password is the key to running code.** Anyone who logs in can run code in the worker, so
+  use a long random password (see [Login](#login)).
+- **The browsers can reach your LAN.** A script drives Browserless, which can load any address the
+  Docker host can.
+- **Without `SCRAPE_WORKER_URL`, scripts run inside the app**, with its secrets and database. That's
+  meant for local development; the app warns at startup if it happens in a container.
 
 ## Upgrading to Sites as data
 
