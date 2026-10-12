@@ -1,73 +1,59 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, inject, input, OnInit, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { form, FormField, FormRoot, required } from '@angular/forms/signals';
 import { AuthService } from '../../services/auth.service';
+
+/** The kind of error the form shows when the server turns the login down. */
+const LOGIN_FAILED = 'loginFailed';
 
 @Component({
   selector: 'app-login',
-  imports: [FormsModule],
+  imports: [FormField, FormRoot],
   templateUrl: './login.html',
   styleUrl: './login.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class Login implements OnInit {
+export class Login {
   private readonly _auth = inject(AuthService);
 
   /** Where to go after logging in, from the query string. */
   public readonly returnUrl = input<string>();
 
-  protected readonly password = signal('');
-  protected readonly error = signal<string | null>(null);
-  protected readonly busy = signal(false);
-
-  /** Logged in already, or login is off (Development): nothing to do here. */
-  public ngOnInit() {
-    if (this._auth.loggedIn()) {
-      window.location.assign(this.safeReturnUrl());
-    }
-  }
-
-  protected async submit() {
-    const password = this.password().trim();
-    if (!password || this.busy()) {
-      return;
-    }
-
-    this.busy.set(true);
-    this.error.set(null);
-    try {
-      await this._auth.login(password);
-    } catch (error) {
-      this.error.set(describe(error));
-      this.password.set('');
-      this.busy.set(false);
-      return;
-    }
-
-    // A full page load rather than the router: the return URL may be a server page (Scalar), and
-    // the app starts fresh under the new session.
-    window.location.assign(this.safeReturnUrl());
-  }
+  protected readonly loginForm = form(
+    signal({ password: '' }),
+    path => {
+      required(path.password, { message: 'Enter the password.' });
+    },
+    {
+      submission: {
+        action: async field => {
+          try {
+            await this._auth.login(field.password().value());
+          } catch (error) {
+            // Clears the password and puts the cursor back in it for the next attempt.
+            field.password().value.set('');
+            field.password().focusBoundControl();
+            return { kind: LOGIN_FAILED, message: describe(error), fieldTree: field.password };
+          }
+          this._auth.goToReturnUrl(this.returnUrl());
+          return undefined;
+        },
+      },
+    },
+  );
 
   /**
-   * The return URL if it's on this site, so a crafted link can't send you elsewhere after logging
-   * in. Resolving it against this origin catches what prefix checks miss, such as `/\evil.com`,
-   * which browsers treat as `//evil.com`. It returns the resolved absolute URL, never just its path:
-   * `/.//evil.com` resolves on this origin to the path `//evil.com`, which leaves the site if it's
-   * loaded on its own.
+   * The password's error once it's been touched. The server's answer comes first: the password is
+   * cleared after a failed login, which also makes it "required".
    */
-  private safeReturnUrl() {
-    const url = this.returnUrl();
-    if (!url) {
-      return '/';
+  protected readonly passwordError = computed(() => {
+    const password = this.loginForm.password();
+    if (!password.touched()) {
+      return null;
     }
-    try {
-      const resolved = new URL(url, window.location.origin);
-      return resolved.origin === window.location.origin && !resolved.pathname.startsWith('/login') ? resolved.href : '/';
-    } catch {
-      return '/';
-    }
-  }
+    const errors = password.errors();
+    return (errors.find(error => error.kind === LOGIN_FAILED) ?? errors.at(0))?.message ?? null;
+  });
 }
 
 function describe(error: unknown) {

@@ -1,10 +1,11 @@
 import { Routes } from '@angular/router';
 import { SiteDashboard } from './components/site-dashboard/site-dashboard';
-import { authGuard } from './services/auth.guard';
+import { authGuard, loginGuard } from './services/auth.guard';
 
 export const routes: Routes = [
   {
     path: 'login',
+    canActivate: [loginGuard],
     loadComponent: () => import('./components/login/login').then(m => m.Login)
   },
   {
