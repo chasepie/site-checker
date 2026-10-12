@@ -27,13 +27,13 @@ public static class HubOriginCheck
         /// </summary>
         public IApplicationBuilder UseHubOriginCheck(PathString hubPath)
         {
+            var hostFiltering = app.ApplicationServices.GetRequiredService<IOptions<HostFilteringOptions>>();
+            // Built on first use rather than per request; startup has already checked the setting.
+            var allowedHosts = new Lazy<StringSegment[]?>(() => AllowedHostPatterns(hostFiltering.Value.AllowedHosts));
             return app.UseWhen(
                 context => context.Request.Path.StartsWithSegments(hubPath),
                 branch => branch.Use(async (context, next) =>
                 {
-                    var allowedHosts = context.RequestServices
-                        .GetRequiredService<IOptions<HostFilteringOptions>>()
-                        .Value.AllowedHosts;
                     var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
                     var origin = context.Request.Headers.Origin.ToString();
                     // The Origin check is only the fallback: behind a proxy that rewrites the Host
@@ -41,7 +41,7 @@ public static class HubOriginCheck
                     // same-origin.
                     var allowed = fetchSite.Length > 0
                         ? fetchSite == "same-origin"
-                        : origin.Length == 0 || IsAllowedOrigin(origin, allowedHosts);
+                        : origin.Length == 0 || IsAllowedOrigin(origin, allowedHosts.Value);
                     if (!allowed)
                     {
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -52,15 +52,20 @@ public static class HubOriginCheck
         }
     }
 
-    private static bool IsAllowedOrigin(string origin, IList<string> allowedHosts)
-    {
-        if (allowedHosts.Count == 0 || allowedHosts.Contains("*"))
-        {
-            return true;
-        }
+    /// <summary>
+    /// The allowed hosts as <see cref="HostString.MatchesAny"/> patterns, or <c>null</c> when every
+    /// host is allowed. Converted to punycode, as <c>HostFilteringMiddleware</c> converts them, since
+    /// browsers send an internationalized name that way.
+    /// </summary>
+    private static StringSegment[]? AllowedHostPatterns(IList<string> allowedHosts)
+        => allowedHosts.Count == 0 || allowedHosts.Contains("*")
+            ? null
+            : [.. allowedHosts.Select(host => new StringSegment(new HostString(host).ToUriComponent()))];
+
+    private static bool IsAllowedOrigin(string origin, StringSegment[]? allowedHosts)
         // Matched the way HostFilteringMiddleware matches Host headers (port ignored, IPv6 in
         // brackets, *.example.com wildcards), so the hub accepts exactly the hosts the app does.
-        return Uri.TryCreate(origin, UriKind.Absolute, out var originUri)
-            && HostString.MatchesAny(originUri.Authority, [.. allowedHosts.Select(host => new StringSegment(host))]);
-    }
+        => allowedHosts is null
+            || (Uri.TryCreate(origin, UriKind.Absolute, out var originUri)
+                && HostString.MatchesAny(originUri.Authority, allowedHosts));
 }

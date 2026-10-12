@@ -8,7 +8,7 @@ Around it:
 - Every controller write needs an antiforgery token in the `X-XSRF-TOKEN` header. Angular's HttpClient sends it from the `XSRF-TOKEN` cookie. `SameSite=Strict` alone isn't enough, because hosts under a shared suffix such as `ts.net` count as the same site, and so does another app on this host at another port. That app can read the cookie, since cookies ignore ports, so the token is never accepted from a form field, which it could post without CORS.
 - Login attempts are limited to 5 a minute from each address and 30 from all of them, so another host can't lock you out by itself, and changing addresses doesn't buy more guesses. Only requests that can log in count, so a cross-site form post can't use them up. Behind a reverse proxy, the client's address comes from `X-Forwarded-For` only if the proxy is in `TRUSTED_PROXIES`.
 - The hub refuses pages from other origins, since CORS doesn't cover WebSockets. It goes by the browser's `Sec-Fetch-Site`, which tells ports apart and holds behind a proxy, and otherwise by the `Origin` host.
-- A logout closes every hub connection, because SignalR keeps the login a connection started with.
+- A logout closes its session's hub connections, because SignalR keeps the login a connection started with. Each login carries a random session id, so other logins stay connected.
 - `ALLOWED_HOSTS` restricts the Host headers the app answers to, so a web page can't reach it by rebinding its own domain to the app's address.
 
 In Development without a password, login is off.

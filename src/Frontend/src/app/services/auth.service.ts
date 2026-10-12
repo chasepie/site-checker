@@ -37,8 +37,8 @@ export class AuthService {
   public readonly canLogOut = computed(() => this._loginRequired() && this._loggedIn());
 
   constructor() {
-    // Any logout closes every connection on the server. A browser still logged in reconnects;
-    // one that isn't goes to the login page.
+    // A logout closes its session's connections on the server, including this browser's other
+    // tabs, which then go to the login page. A connection that drops while logged in reconnects.
     this._signalr.onReconnecting(() => void this.checkSessionStillOpen());
     this._signalr.onClose(() => void this.reconnectIfStillLoggedIn());
   }
@@ -52,11 +52,19 @@ export class AuthService {
   }
 
   /**
-   * At startup: connects to the hub if logged in. If it can't, the app loads anyway and keeps
-   * trying, rather than failing startup and leaving a blank page.
+   * At startup: connects to the hub if logged in. If it can't, or can't even read the session, the
+   * app loads anyway (at the login page, if the session is unknown) and keeps trying, rather than
+   * failing startup and leaving a blank page.
    */
   public async initialize() {
-    if (await this.refresh()) {
+    let loggedIn: boolean;
+    try {
+      loggedIn = await this.refresh();
+    } catch {
+      void this.reconnectIfStillLoggedIn();
+      return;
+    }
+    if (loggedIn) {
       try {
         await this._signalr.start();
       } catch {
@@ -139,8 +147,9 @@ export class AuthService {
   }
 
   /**
-   * The hub closed for good (the server closes connections on any logout, which also stops
-   * automatic reconnecting), or didn't start. Starts it again while the session is still valid.
+   * The hub closed for good (the server closes a session's connections when it logs out, which
+   * also stops automatic reconnecting), or didn't start, or startup couldn't read the session.
+   * Starts it again while the session is still valid.
    */
   private async reconnectIfStillLoggedIn() {
     for (let attempt = 0; ; attempt++) {
@@ -152,6 +161,12 @@ export class AuthService {
       try {
         if (!await this.refresh()) {
           this.sessionEnded();
+          return;
+        }
+        const current = this._router.url;
+        if (current.startsWith('/login')) {
+          // Startup couldn't read the session, so the guard showed the login page, but it's valid.
+          this.goToReturnUrl(this._router.parseUrl(current).queryParamMap.get('returnUrl'));
           return;
         }
         await this._signalr.start();

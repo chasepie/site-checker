@@ -58,6 +58,10 @@ export class Login {
 
 function describe(error: unknown) {
   if (error instanceof HttpErrorResponse) {
+    // The server requires a password that isn't blank once trimmed; only spaces get here.
+    if (error.status === 400) {
+      return 'Enter the password.';
+    }
     if (error.status === 401) {
       return 'That password is wrong.';
     }

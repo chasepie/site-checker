@@ -137,6 +137,8 @@ public static class SecurityExtensions
                 // but another port can read the XSRF-TOKEN cookie (cookies ignore ports), and a form
                 // field it could post without a preflight.
                 options.SuppressReadingTokenFromFormBody = true;
+                // Secure over HTTPS, like the session cookie; the default never is.
+                options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             });
             services.Configure<MvcOptions>(options => options.Filters.Add<ValidateAntiforgeryFilter>());
 

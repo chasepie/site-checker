@@ -74,6 +74,7 @@ public sealed class AuthController(
             [
                 new Claim(ClaimTypes.Name, "admin"),
                 new Claim(AdminPassword.SessionStampClaim, _adminPassword.SessionStamp!),
+                new Claim(HubConnections.SessionIdClaim, Guid.NewGuid().ToString("N")),
             ],
             CookieAuthenticationDefaults.AuthenticationScheme));
         await HttpContext.SignInAsync(
@@ -88,15 +89,18 @@ public sealed class AuthController(
     }
 
     /// <summary>
-    /// Ends this browser's session, and closes every live-update connection, which would otherwise
-    /// carry on with the login they started with. Browsers still logged in reconnect. Needs a login,
-    /// so a stranger can't close everyone's connections.
+    /// Ends this browser's session, and closes its live-update connections, which would otherwise
+    /// carry on with the login they started with. Other logins stay connected.
     /// </summary>
     [HttpPost("logout")]
     public async Task<ActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        _hubConnections.CloseAll();
+        // Every login has one; with login off, there's no session to close.
+        if (User.FindFirst(HubConnections.SessionIdClaim)?.Value is { } sessionId)
+        {
+            _hubConnections.CloseSession(sessionId);
+        }
         return NoContent();
     }
 

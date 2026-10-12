@@ -182,9 +182,8 @@ export type SessionInfo = z.infer<typeof SessionInfo>;
 		await lastValueFrom(obs$);
 	}
 	/**
-	* Ends this browser's session, and closes every live-update connection, which would otherwise
-	*             carry on with the login they started with. Browsers still logged in reconnect. Needs a login,
-	*             so a stranger can't close everyone's connections.
+	* Ends this browser's session, and closes its live-update connections, which would otherwise
+	*             carry on with the login they started with. Other logins stay connected.
 	*/
 	public async logout() 
 	{

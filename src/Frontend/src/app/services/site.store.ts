@@ -1,8 +1,10 @@
 import { computed, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   patchState, signalStore, withComputed, withHooks,
   withMethods, withProps, withState
 } from '@ngrx/signals';
+import { setAllEntities } from '@ngrx/signals/entities';
 import { Site, SiteController, SiteUpdate } from '../generated/model';
 import { withCrudEntities } from './base.store';
 import { sitecheckSort, SiteCheckStore } from './site-check.store';
@@ -69,9 +71,11 @@ export const SiteStore = signalStore(
 
   withHooks(store => ({
     onInit: () => {
-      void store._controller.getAllSites()
-        .then(sites => {
-          store._upsertInCache(sites);
+      store._signalrService.loadOnConnect(() => store._controller.getAllSites())
+        .pipe(takeUntilDestroyed())
+        .subscribe(sites => {
+          // Replaced rather than merged, so a Site deleted while the hub was down goes too.
+          patchState(store, setAllEntities(sites));
           for (const site of sites) {
             store._siteCheckStore.upsertFromSite(site);
           }

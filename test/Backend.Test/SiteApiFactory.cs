@@ -2,6 +2,7 @@ namespace SiteChecker.Backend.Test;
 
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -11,7 +12,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using SiteChecker.Backend.Services.Security;
+using SiteChecker.Backend.Services.SignalR;
 using SiteChecker.Database;
 using SiteChecker.Scraper;
 
@@ -49,6 +52,10 @@ internal sealed class SiteApiFactory(
     private readonly Dictionary<string, string?> _settings = new(StringComparer.OrdinalIgnoreCase)
     {
         [AdminPassword.AdminPasswordKey] = Password,
+        // Cleared, so the developer's .env, which startup loads, can't change what tests see.
+        [SecurityExtensions.AllowedHostsKey] = null,
+        [SecurityExtensions.SessionDaysKey] = null,
+        [SecurityExtensions.TrustedProxiesKey] = null,
     };
 
     public FakeScraperService Scraper { get; } = new();
@@ -93,20 +100,41 @@ internal sealed class SiteApiFactory(
     /// issued, as the frontend does. Its cookies keep the session.
     /// </summary>
     public async Task<HttpClient> CreateLoggedInClientAsync(CancellationToken cancellationToken)
+        => (await CreateLoggedInSessionAsync(cancellationToken)).Client;
+
+    /// <summary>
+    /// Like <see cref="CreateLoggedInClientAsync"/>, also giving the login's session id
+    /// (<see cref="HubConnections.SessionIdClaim"/>), read from the encrypted session cookie.
+    /// </summary>
+    public async Task<(HttpClient Client, string SessionId)> CreateLoggedInSessionAsync(CancellationToken cancellationToken)
     {
         var client = CreateClient();
         var response = await client.PostAsJsonAsync("/api/auth/login", new { password = Password }, cancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode, "Logging in failed.");
         client.DefaultRequestHeaders.Add(SecurityExtensions.AntiforgeryHeaderName, ReadAntiforgeryToken(response));
-        return client;
+        return (client, ReadSessionId(response));
     }
 
     /// <summary>
     /// The antiforgery request token a response issued in its <c>XSRF-TOKEN</c> cookie.
     /// </summary>
     public static string ReadAntiforgeryToken(HttpResponseMessage response)
+        => ReadCookie(response, SecurityExtensions.AntiforgeryCookieName);
+
+    private string ReadSessionId(HttpResponseMessage response)
     {
-        var prefix = SecurityExtensions.AntiforgeryCookieName + "=";
+        var ticket = Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(CookieAuthenticationDefaults.AuthenticationScheme)
+            .TicketDataFormat
+            .Unprotect(ReadCookie(response, SecurityExtensions.SessionCookieName));
+        var sessionId = ticket?.Principal.FindFirst(HubConnections.SessionIdClaim)?.Value;
+        Assert.IsNotNull(sessionId, "The session cookie has no session id.");
+        return sessionId;
+    }
+
+    private static string ReadCookie(HttpResponseMessage response, string name)
+    {
+        var prefix = name + "=";
         var cookie = response.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith(prefix, StringComparison.Ordinal));
         return Uri.UnescapeDataString(cookie[prefix.Length..cookie.IndexOf(';', StringComparison.Ordinal)]);
     }

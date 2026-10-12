@@ -1,4 +1,5 @@
 import { computed, effect, inject, resource } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { patchState, signalStore, withComputed, withHooks, withMethods, withProps, withState } from '@ngrx/signals';
 import { Site, SiteCheck, SiteCheckController } from '../generated/model';
 import { withCrudEntities } from './base.store';
@@ -188,6 +189,11 @@ export const SiteCheckStore = signalStore(
 
   withHooks(store => ({
     onInit: () => {
+      // The events sent while the hub was down are lost, so the page shown is loaded again.
+      store._signalrService.connected$
+        .pipe(takeUntilDestroyed())
+        .subscribe(() => { store._resource.reload(); });
+
       effect(() => {
         if (!store._resource.hasValue()) {
           return;

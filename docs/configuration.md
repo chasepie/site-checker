@@ -43,6 +43,11 @@ What's still exposed:
   change `ADMIN_PASSWORD` to end every session. It's HttpOnly and `SameSite=Strict`, but it's only
   `Secure` when you reach the app over HTTPS, directly or through a proxy in `TRUSTED_PROXIES`. Over
   plain HTTP, someone who can watch your network traffic could copy it.
+- **Other apps on the same host name get the session cookie.** Cookies ignore ports, and
+  `SameSite=Strict` treats another port as the same site, so your browser sends the cookie to any
+  app it visits at this host name on another port. The antiforgery header and the hub's origin
+  check stop such an app's pages from using the API, but not its server from reading the cookie
+  and using it. Only run apps you trust under the host names in `ALLOWED_HOSTS`.
 
 Even so, keep the app on networks you trust, such as your home LAN or a private VPN like Tailscale.
 The login is one shared password with no second factor, so don't expose the app to the internet
@@ -62,6 +67,11 @@ outside the browser now needs a login.
 | browserless     | site-checker-browserless     | 3000      | Standard headless Chrome instance |
 | browserless-vpn | site-checker-browserless-vpn | (see vpn) | VPN-routed headless Chrome        |
 | vpn             | site-checker-vpn             | 3001      | WireGuard VPN client (PIA)        |
+
+Only the app gets all of `.env`. The vpn container gets `PIA_USERNAME`, `PIA_PASSWORD` and
+`LOCAL_NETWORK` from it, so the app's secrets stay out of a third-party image. To pass it other
+[docker-wireguard-pia](https://github.com/thrnz/docker-wireguard-pia) settings, add them to its
+`environment` in `docker-compose.yml`.
 
 ```bash
 # Start all services

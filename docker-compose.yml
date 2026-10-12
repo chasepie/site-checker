@@ -58,12 +58,13 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    env_file:
-      - .env
+    # Only the settings it needs, not all of .env, which holds the app's secrets. Add any other
+    # docker-wireguard-pia settings here.
     environment:
       - TZ=America/New_York
       - USER=${PIA_USERNAME}
       - PASS=${PIA_PASSWORD}
+      - LOCAL_NETWORK=${LOCAL_NETWORK:-}
       - ACTIVE_HEALTHCHECKS=1
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1

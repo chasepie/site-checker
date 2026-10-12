@@ -2,10 +2,8 @@ namespace SiteChecker.Backend.Test;
 
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Claims;
 using System.Text;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Hosting;
@@ -204,7 +202,7 @@ public sealed class SecurityTests
     public async Task Logout_WithoutALogin_IsUnauthorized_AndClosesNoConnections()
     {
         await using var factory = new SiteApiFactory();
-        var connection = new FakeHubConnection();
+        var connection = new FakeHubCallerContext();
         factory.Services.GetRequiredService<HubConnections>().Add(connection);
         using var client = factory.CreateClient();
         // A valid antiforgery token, as anyone can get one from the session endpoint.
@@ -218,36 +216,24 @@ public sealed class SecurityTests
     }
 
     [TestMethod]
-    public async Task Logout_ClosesEveryHubConnection()
+    public async Task Logout_ClosesItsSessionsHubConnections_ButNotOtherLogins()
     {
         await using var factory = new SiteApiFactory();
-        var connection = new FakeHubConnection();
-        factory.Services.GetRequiredService<HubConnections>().Add(connection);
-        using var client = await factory.CreateLoggedInClientAsync(Ct);
+        var session = await factory.CreateLoggedInSessionAsync(Ct);
+        using var client = session.Client;
+        var otherSession = await factory.CreateLoggedInSessionAsync(Ct);
+        using var otherClient = otherSession.Client;
+        var connections = factory.Services.GetRequiredService<HubConnections>();
+        var connection = new FakeHubCallerContext(session.SessionId);
+        var otherConnection = new FakeHubCallerContext(otherSession.SessionId);
+        connections.Add(connection);
+        connections.Add(otherConnection);
 
         var logout = await client.PostAsync("/api/auth/logout", content: null, Ct);
 
         Assert.AreEqual(HttpStatusCode.NoContent, logout.StatusCode);
         Assert.IsTrue(connection.Aborted);
-    }
-
-    private sealed class FakeHubConnection : HubCallerContext
-    {
-        public bool Aborted { get; private set; }
-
-        public override string ConnectionId { get; } = Guid.NewGuid().ToString("N");
-
-        public override string? UserIdentifier => null;
-
-        public override ClaimsPrincipal? User => null;
-
-        public override IDictionary<object, object?> Items { get; } = new Dictionary<object, object?>();
-
-        public override IFeatureCollection Features { get; } = new FeatureCollection();
-
-        public override CancellationToken ConnectionAborted => CancellationToken.None;
-
-        public override void Abort() => Aborted = true;
+        Assert.IsFalse(otherConnection.Aborted);
     }
 
     [TestMethod]
@@ -359,6 +345,8 @@ public sealed class SecurityTests
         var cookies = login.Headers.GetValues("Set-Cookie").ToList();
         Assert.AreEqual(secure, IsSecure(cookies.Single(c => c.StartsWith(SecurityExtensions.SessionCookieName + "=", StringComparison.Ordinal))));
         Assert.AreEqual(secure, IsSecure(cookies.Single(c => c.StartsWith(SecurityExtensions.AntiforgeryCookieName + "=", StringComparison.Ordinal))));
+        // The HttpOnly half of the antiforgery pair.
+        Assert.AreEqual(secure, IsSecure(cookies.Single(c => c.StartsWith(".AspNetCore.Antiforgery.", StringComparison.Ordinal))));
     }
 
     [TestMethod]
@@ -546,16 +534,16 @@ public sealed class SecurityTests
     /// <summary>
     /// One of the Sites startup seeds.
     /// </summary>
-    private static async Task<int> FirstSiteIdAsync(SiteApiFactory factory)
+    private async Task<int> FirstSiteIdAsync(SiteApiFactory factory)
     {
         await using var dbContext = factory.CreateDbContext();
-        return dbContext.Sites.Select(site => site.Id).First();
+        return await dbContext.Sites.Select(site => site.Id).FirstAsync(Ct);
     }
 
-    private static async Task<bool> AnySiteCheckAsync(SiteApiFactory factory)
+    private async Task<bool> AnySiteCheckAsync(SiteApiFactory factory)
     {
         await using var dbContext = factory.CreateDbContext();
-        return dbContext.SiteChecks.Any();
+        return await dbContext.SiteChecks.AnyAsync(Ct);
     }
 
     // ---- Startup checks ----

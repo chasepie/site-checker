@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 
 namespace SiteChecker.Backend.Services.Security;
 
@@ -29,9 +30,11 @@ public sealed class ValidateAntiforgeryFilter(IAntiforgery antiforgery) : IAsync
         {
             return;
         }
-        var metadata = context.HttpContext.GetEndpoint()?.Metadata;
-        if (metadata?.GetMetadata<IgnoreAntiforgeryTokenAttribute>() is not null
-            || metadata?.GetMetadata<IAntiforgeryMetadata>() is { RequiresValidation: false })
+        // The last antiforgery attribute is the most specific (the action's over its controller's),
+        // as in MVC, so an action can require the token that its controller ignores.
+        var policy = context.HttpContext.GetEndpoint()?.Metadata
+            .LastOrDefault(item => item is IAntiforgeryPolicy or IAntiforgeryMetadata);
+        if (policy is IgnoreAntiforgeryTokenAttribute or IAntiforgeryMetadata { RequiresValidation: false })
         {
             return;
         }

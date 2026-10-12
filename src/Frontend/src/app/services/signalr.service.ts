@@ -1,6 +1,6 @@
-import { Injectable } from '@angular/core';
+import { ErrorHandler, inject, Injectable } from '@angular/core';
 import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
-import { Observable } from 'rxjs';
+import { catchError, defer, EMPTY, Observable, startWith, Subject, switchMap } from 'rxjs';
 import { ZodType } from 'zod';
 import {
   CreatedEntityChange, DeletedEntityChange,
@@ -13,10 +13,16 @@ import {
   providedIn: 'root'
 })
 export class SignalrService {
+  private readonly _errorHandler = inject(ErrorHandler);
   private readonly _connection = new HubConnectionBuilder()
     .withUrl(`/${SignalRConstants.HubName}`)
     .withAutomaticReconnect()
     .build();
+  private readonly _connected = new Subject<void>();
+
+  constructor() {
+    this._connection.onreconnected(() => { this._connected.next(); });
+  }
 
   private getObservable<T>(zodType: ZodType<T>, methodName: string) {
     return new Observable<T>(sub => {
@@ -39,6 +45,12 @@ export class SignalrService {
   public readonly entityDeleted$ = this.getObservable(DeletedEntityChange, SignalRConstants.OnEntityDeletedKey);
   public readonly locationChanged$ = this.getObservable(PiaLocation, SignalRConstants.OnLocationChangedKey);
 
+  /**
+   * Emits each time the connection is made, including by automatic reconnecting. The events sent
+   * while it was down are lost, so stores load their data again (see `loadOnConnect`).
+   */
+  public readonly connected$ = this._connected.asObservable();
+
   public get connectionId() {
     return this._connection.connectionId;
   }
@@ -47,7 +59,25 @@ export class SignalrService {
   public async start() {
     if (this._connection.state === HubConnectionState.Disconnected) {
       await this._connection.start();
+      this._connected.next();
     }
+  }
+
+  /**
+   * What `load` resolves to, now and again each time the connection is made, since the events sent
+   * while it was down are lost. A load that the next one overtakes is dropped, and one that fails
+   * is reported and waits for the next connection.
+   */
+  public loadOnConnect<T>(load: () => Promise<T>): Observable<T> {
+    return this._connected.pipe(
+      startWith(undefined),
+      switchMap(() => defer(load).pipe(
+        catchError((error: unknown) => {
+          this._errorHandler.handleError(error);
+          return EMPTY;
+        }),
+      )),
+    );
   }
 
   public async stop() {
