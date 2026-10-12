@@ -19,9 +19,14 @@
         }
       </ul>
       @if (auth.canLogOut()) {
-      <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" (click)="logout()">
-        <i class="bi bi-box-arrow-right"></i> Log out
-      </button>
+      <div class="ms-auto d-flex align-items-center gap-2">
+        @if (logoutFailed()) {
+        <span class="text-danger small" role="alert">Couldn't log out. Try again.</span>
+        }
+        <button type="button" class="btn btn-outline-secondary btn-sm" (click)="logout()">
+          <i class="bi bi-box-arrow-right"></i> Log out
+        </button>
+      </div>
       }
     </div>
   </div>
@@ -44,6 +49,9 @@
     <button type="button" class="btn btn-outline-secondary btn-sm mt-3" (click)="logout()">
       <i class="bi bi-box-arrow-right"></i> Log out
     </button>
+    @if (logoutFailed()) {
+    <div class="text-danger small mt-2" role="alert">Couldn't log out. Try again.</div>
+    }
     }
   </div>
 </ng-template>

@@ -522,6 +522,27 @@ public sealed class SecurityTests
         Assert.AreEqual(expected, response.StatusCode);
     }
 
+    [TestMethod]
+    [DataRow("same-origin", HttpStatusCode.OK)]
+    [DataRow("same-site", HttpStatusCode.Forbidden)]
+    [DataRow("cross-site", HttpStatusCode.Forbidden)]
+    public async Task Hub_BehindAProxyThatRewritesTheHost_TrustsTheBrowsersFetchMetadata(string fetchSite, HttpStatusCode expected)
+    {
+        // The proxy serves the public name but forwards the allowed Host "localhost".
+        await using var factory = new SiteApiFactory(settings: new Dictionary<string, string?>
+        {
+            [SecurityExtensions.AllowedHostsKey] = "localhost",
+        });
+        using var client = await factory.CreateLoggedInClientAsync(Ct);
+        using var request = new HttpRequestMessage(HttpMethod.Post, NegotiatePath);
+        request.Headers.Add("Origin", "https://sitechecker.example.net");
+        request.Headers.Add("Sec-Fetch-Site", fetchSite);
+
+        var response = await client.SendAsync(request, Ct);
+
+        Assert.AreEqual(expected, response.StatusCode);
+    }
+
     /// <summary>
     /// One of the Sites startup seeds.
     /// </summary>

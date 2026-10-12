@@ -1,4 +1,5 @@
 import { DOCUMENT } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthController } from '../generated/model';
@@ -78,15 +79,25 @@ export class AuthService {
     this._location.assign(this.safeReturnUrl(returnUrl));
   }
 
-  /** Ends the session and reloads at the login page. */
+  /**
+   * Ends the session and reloads at the login page. If the server doesn't end it, this reconnects
+   * the hub and throws, so the caller can say so and the user can try again.
+   */
   public async logout() {
     this._loggingOut = true;
     try {
       await this._signalr.stop();
       await this._controller.logout();
-    } finally {
-      this._location.assign('/login');
+    } catch (error) {
+      // A 401 means the session had already ended.
+      if (!(error instanceof HttpErrorResponse && error.status === 401)) {
+        this._loggingOut = false;
+        // Also reads the session again, which renews the antiforgery token for the retry.
+        void this.reconnectIfStillLoggedIn();
+        throw error;
+      }
     }
+    this._location.assign('/login');
   }
 
   /** After the server answers 401: the session ended, so reload at the login page. */

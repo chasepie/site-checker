@@ -22,8 +22,8 @@ public static class HubOriginCheck
     {
         /// <summary>
         /// Answers 403 to requests under <paramref name="hubPath"/> that a browser marks as not
-        /// <c>same-origin</c>, or whose <c>Origin</c> host isn't one of the allowed hosts. The
-        /// host check does nothing while every host is allowed (Development).
+        /// <c>same-origin</c>, or, without that mark, whose <c>Origin</c> host isn't one of the
+        /// allowed hosts. The host check does nothing while every host is allowed (Development).
         /// </summary>
         public IApplicationBuilder UseHubOriginCheck(PathString hubPath)
         {
@@ -36,8 +36,13 @@ public static class HubOriginCheck
                         .Value.AllowedHosts;
                     var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
                     var origin = context.Request.Headers.Origin.ToString();
-                    if ((fetchSite.Length > 0 && fetchSite != "same-origin")
-                        || (origin.Length > 0 && !IsAllowedOrigin(origin, allowedHosts)))
+                    // The Origin check is only the fallback: behind a proxy that rewrites the Host
+                    // header, the page's origin isn't an allowed host, but the browser still says
+                    // same-origin.
+                    var allowed = fetchSite.Length > 0
+                        ? fetchSite == "same-origin"
+                        : origin.Length == 0 || IsAllowedOrigin(origin, allowedHosts);
+                    if (!allowed)
                     {
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
                         return;

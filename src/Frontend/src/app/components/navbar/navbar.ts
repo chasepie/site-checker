@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, TemplateRef } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, TemplateRef } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { NgbOffcanvas } from '@ng-bootstrap/ng-bootstrap';
 import { AuthService } from '../../services/auth.service';
@@ -15,6 +15,7 @@ export class Navbar {
   private readonly _siteDashboardService = inject(SiteDashboardService);
   private _offcanvasService = inject(NgbOffcanvas);
   protected readonly auth = inject(AuthService);
+  protected readonly logoutFailed = signal(false);
 
   protected readonly pages = [
     { name: 'Dashboard', route: '/' },
@@ -31,6 +32,11 @@ export class Navbar {
   }
 
   protected async logout() {
-    await this.auth.logout();
+    this.logoutFailed.set(false);
+    try {
+      await this.auth.logout();
+    } catch {
+      this.logoutFailed.set(true);
+    }
   }
 }
