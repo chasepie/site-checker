@@ -57,6 +57,11 @@ public sealed class SecurityTests
     [DataRow("GET", "/api/vpn/CurrentLocation")]
     [DataRow("POST", "/api/site/1/check")]
     [DataRow("DELETE", "/api/site/1/check")]
+    [DataRow("POST", "/api/site")]
+    [DataRow("PUT", "/api/site/1")]
+    [DataRow("DELETE", "/api/site/1")]
+    [DataRow("GET", "/api/site/1/script")]
+    [DataRow("POST", "/api/site/test-run")]
     [DataRow("POST", NegotiatePath)]
     public async Task Endpoint_WithoutALogin_IsUnauthorized(string method, string path)
     {

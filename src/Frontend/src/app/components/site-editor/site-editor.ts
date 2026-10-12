@@ -430,6 +430,11 @@ export class SiteEditor {
       }
     }
 
+    if (error instanceof HttpErrorResponse && error.status === 401) {
+      // The session ended; the session interceptor is already on its way to the login page.
+      return;
+    }
+
     console.error('The server rejected the request:', error);
     const message = error instanceof HttpErrorResponse || error instanceof Error
       ? error.message
