@@ -60,6 +60,12 @@ public static class SecurityExtensions
     /// </summary>
     private static readonly string[] WildcardHosts = ["*", "0.0.0.0", "[::]"];
 
+    /// <summary>
+    /// Always allowed alongside <c>ALLOWED_HOSTS</c>. A rebinding page's requests carry its own
+    /// domain, never these, and the Angular dev server forwards <c>127.0.0.1</c> as the host.
+    /// </summary>
+    private static readonly string[] LoopbackHosts = ["localhost", "127.0.0.1", "[::1]"];
+
     extension(IServiceCollection services)
     {
         /// <summary>
@@ -171,7 +177,7 @@ public static class SecurityExtensions
                         return;
                     }
 
-                    options.AllowedHosts = [.. hosts.Append("localhost").Distinct(StringComparer.OrdinalIgnoreCase)];
+                    options.AllowedHosts = [.. hosts.Concat(LoopbackHosts).Distinct(StringComparer.OrdinalIgnoreCase)];
                 });
             return services;
         }

@@ -584,6 +584,8 @@ public sealed class SecurityTests
     [DataRow("sitechecker.lan", HttpStatusCode.OK)]
     [DataRow("SiteChecker.ts.net", HttpStatusCode.OK)]
     [DataRow("localhost", HttpStatusCode.OK)]
+    [DataRow("127.0.0.1", HttpStatusCode.OK)]
+    [DataRow("[::1]", HttpStatusCode.OK)]
     [DataRow("rebound.example.com", HttpStatusCode.BadRequest)]
     public async Task AllowedHosts_RejectOtherHostHeaders(string host, HttpStatusCode expected)
     {
