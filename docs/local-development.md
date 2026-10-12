@@ -61,6 +61,10 @@ cd src/Backend
 dotnet run
 ```
 
+In Development, `ADMIN_PASSWORD` and `ALLOWED_HOSTS` are optional: without a password, login is off and
+the app opens without a login page. Set `ADMIN_PASSWORD` in `.env` to work on the login itself. Login
+keys are kept in `site-checker/data/keys`, next to the database, so restarting doesn't log you out.
+
 ### Frontend
 
 ```bash

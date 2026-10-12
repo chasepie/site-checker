@@ -132,6 +132,72 @@ export const PiaLocation = z.object({
 });
 export type PiaLocation = z.infer<typeof PiaLocation>;
 
+export const LoginRequest = z.object({
+	password: z.string(),
+});
+export type LoginRequest = z.infer<typeof LoginRequest>;
+
+export const SessionInfo = z.object({
+	loginRequired: z.boolean(),
+	loggedIn: z.boolean(),
+});
+export type SessionInfo = z.infer<typeof SessionInfo>;
+
+/**
+* The login. There's one password (<c>ADMIN_PASSWORD</c>) and no users; a login is a session
+*             cookie that every other endpoint requires. Only the session check and the login itself are open;
+*             logging out needs a login, like everything else.
+*/
+@Injectable({ providedIn: 'root'}) export class AuthController
+{
+	private _httpClient: HttpClient = inject(HttpClient);
+	/** Whether this browser is logged in. Also issues the antiforgery token for its next writes. */
+	public async getSession() 
+	{
+		const obs$ = this._httpClient.request(
+			'GET',
+			`api/Auth/session`,
+			{
+				params: {},
+				body: null
+			}
+		);
+		const result = await lastValueFrom(obs$);
+		return SessionInfo.parse(result);
+	}
+	/**
+	* Logs in with the password. A wrong one gets 401; too many attempts in a minute, from this
+	*             client or from all of them, get 429.
+	*/
+	public async login(request: LoginRequest) 
+	{
+		const obs$ = this._httpClient.request(
+			'POST',
+			`api/Auth/login`,
+			{
+				params: {},
+				body: request
+			}
+		);
+		await lastValueFrom(obs$);
+	}
+	/**
+	* Ends this browser's session, and closes its live-update connections, which would otherwise
+	*             carry on with the login they started with. Other logins stay connected.
+	*/
+	public async logout() 
+	{
+		const obs$ = this._httpClient.request(
+			'POST',
+			`api/Auth/logout`,
+			{
+				params: {},
+				body: null
+			}
+		);
+		await lastValueFrom(obs$);
+	}
+}
 @Injectable({ providedIn: 'root'}) export class SiteCheckController
 {
 	private _httpClient: HttpClient = inject(HttpClient);
@@ -211,8 +277,7 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 				body: null
 			}
 		);
-		const result = await lastValueFrom(obs$);
-		z.void().parse(result);
+		await lastValueFrom(obs$);
 	}
 	public async deleteSiteCheck(siteId: number, id: number) 
 	{
@@ -224,8 +289,7 @@ export type PiaLocation = z.infer<typeof PiaLocation>;
 				body: null
 			}
 		);
-		const result = await lastValueFrom(obs$);
-		z.void().parse(result);
+		await lastValueFrom(obs$);
 	}
 }
 @Injectable({ providedIn: 'root'}) export class SiteController

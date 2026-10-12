@@ -39,7 +39,7 @@ cp example.env .env && docker compose up
 Build notes:
 - Building `src/Backend` also builds the Angular app (an `AfterTargets="Build"` step in `Backend.csproj`) and regenerates `src/Frontend/src/app/generated/model.ts`. Node/npm must be available.
 - Package versions are central in `Directory.Packages.props`, and every project has a `packages.lock.json`. CI restores with `--locked-mode`, so commit lock file changes along with version bumps.
-- The frontend specs are untouched Angular scaffolding and currently fail (missing providers). CI only runs the backend tests.
+- Most frontend specs are untouched Angular scaffolding and currently fail (missing providers). The `auth.service`, `signalr.service` and `edit-site` specs are real and pass, so run those with `--include`. CI only runs the backend tests.
 
 ## Architecture
 
@@ -71,9 +71,10 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 - Enums are serialized as strings (`JsonStringEnumConverter`). `CheckStatus` values are pinned because they're stored as integers.
 
 ### Frontend
-- Root-provided NgRx Signals stores in `src/app/services/` are built on `withCrudEntities` (`base.store.ts`), which subscribes to the SignalR entity events and upserts or removes entities whose payload passes the model's Zod schema. Stores update reactively, so **don't poll**.
+- Root-provided NgRx Signals stores in `src/app/services/` are built on `withCrudEntities` (`base.store.ts`), which subscribes to the SignalR entity events and upserts or removes entities whose payload passes the model's Zod schema. Stores update reactively, so **don't poll**. Events sent while the hub is down are lost, so load a store's data with `SignalrService.loadOnConnect` (or reload on `connected$`), which loads again each time it reconnects.
 - All components are standalone (no `NgModule`). Use `inject()` instead of constructor injection, and lazy-load non-dashboard routes with `loadComponent`.
 - Validate external data (SignalR payloads, API responses) with the generated Zod schemas, not hand-written type guards.
+- `AuthService` owns the session and the SignalR connection's lifetime: it reads the session at startup, connects the hub only when logged in, and on logout stops it and reloads at `/login`. Every route but `/login` sits under `authGuard`, and `sessionInterceptor` sends a 401 back to `/login`. Don't start the hub anywhere else.
 
 ## Conventions
 
@@ -83,14 +84,16 @@ Projects: `src/Backend` (ASP.NET Core host: controllers, background services, VP
 - Controllers use `SiteCheckerDbContext` directly; **don't add a repository layer**. Get the cancellation token from `HttpContext.RequestAborted` through a private `CancellationToken` property (see `SiteController`), not from an action parameter, return `this.OkOrNotFound(entity)` for single lookups, and use `ToPagedResponseAsync(pageNumber, pageSize)` for paged lists.
 - Nested config (`SiteSchedule`, `PushoverConfig`, `DiscordConfig`) is stored in JSON columns via `ComplexProperty(...).ToJson()` in `OnModelCreating`.
 - Migrations run with `MigrateAsync()` at startup; never use `EnsureCreated`. Don't hand-edit generated migration snapshots.
-- `SiteCheckerDbContext` uses the injected `DbContextOptions` when a provider is configured, and otherwise falls back to the SQLite file in `site-checker/data/` (or `/app/data` in Docker).
+- `SiteCheckerDbContext` uses the injected `DbContextOptions` when a provider is configured, and otherwise falls back to the SQLite file in `AppDirectories.Data` (`site-checker/data/`, or `/app/data` in Docker).
 
 ### Testing
 - Use MSTest v4 only (no xUnit, NUnit, or Jest). The MSTest analyzers run in `Recommended` mode with warnings as errors, so use the specific asserts (`Assert.HasCount`, `Assert.ContainsSingle`, `Assert.IsEmpty`) and pass `TestContext.CancellationToken`.
 - `test/Backend.Test` tests `SiteCheckRunner` only through its public methods, using `RunnerHarness`: real DI, migrated in-memory SQLite, `FakeTimeProvider`, and a fake `IScraperService`. `harness.Broadcasts` records what the save interceptor would send to clients, `harness.SaveFaults` fails a chosen save, and `harness.Notifications` records every notification sent (`harness.OtherChannel` can be made to fail). Notification behavior is tested through the runner in `NotificationTests`; `PushoverChannelTests` cover the Pushover adapter against a fake HTTP handler. Extend the harness rather than mocking EF.
+- API tests use `SiteApiFactory` (`WebApplicationFactory<Program>`): the real app over in-memory SQLite, with the app's background services removed and a fake `IScraperService`. Its password is `SiteApiFactory.Password`: `CreateLoggedInClientAsync` logs in for real and sends the antiforgery header, and `CreateClient()` is logged out. Its cookie keys go to a temporary directory, never `site-checker/data/keys`. A request carrying `SiteApiFactory.RemoteAddressHeader` comes from that client address, since TestServer gives none.
 
 ### Configuration
 Environment variables are documented in `docs/configuration.md`. Locally, `.env` is loaded by dotenv.net at startup. VPN rotation is controlled by `VPN_CHANGE_INTERVAL` (minutes, default 15 in code), and container networking troubleshooting is in `docs/local-development.md`.
+- **Login** (ADR 0006): `ADMIN_PASSWORD` (`AdminPassword`) is the only credential; `AuthController` logs in to an HttpOnly, `SameSite=Strict` cookie lasting `SESSION_DAYS`. A fallback authorization policy puts **every endpoint behind the login by default**, so mark new public endpoints `[AllowAnonymous]` deliberately. Every controller write needs the antiforgery token (`ValidateAntiforgeryFilter`; Angular's HttpClient sends `X-XSRF-TOKEN` from the `XSRF-TOKEN` cookie that the session and login endpoints issue; the token is never read from a form field). Login attempts are limited per client and in all by `LoginThrottle`, which the login action calls (not the rate limiting middleware, so requests that can't log in don't count), the hub refuses other origins (`HubOriginCheck`: `Sec-Fetch-Site`, else the `Origin` host), and a logout closes its own session's hub connections (`HubConnections`, by the login's session id claim). `ALLOWED_HOSTS` restricts Host headers, and `TRUSTED_PROXIES` lists the reverse proxies whose `X-Forwarded-For`/`-Proto` are believed (none by default). Both `ADMIN_PASSWORD` and `ALLOWED_HOSTS` are required outside Development; without the password in Development, login is off. Keep the app on trusted networks: the login is one shared password.
 
 ## Microsoft documentation
 

@@ -70,7 +70,7 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 2. **Configure environment variables**
    ```bash
    cp example.env .env
-   # Edit .env with your configuration
+   # Edit .env with your configuration. ADMIN_PASSWORD and ALLOWED_HOSTS are required.
    ```
 
 3. **Start all services**
@@ -79,7 +79,7 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
    ```
 
 4. **Access the application**
-   - Application: http://localhost:8080
+   - Application: http://localhost:8080 (log in with `ADMIN_PASSWORD`)
    - API docs: http://localhost:8080/scalar
 
 ### Local Development
@@ -91,6 +91,13 @@ See [docs/local-development.md](docs/local-development.md) for full setup instru
 ## Configuration
 
 Configuration is managed through `appsettings.json`, `.env` files, and Docker environment variables. See [docs/configuration.md](docs/configuration.md) for the full environment variables reference and Docker services table.
+
+## Security
+
+The app is behind a single-user login (`ADMIN_PASSWORD`). It's one shared password, so keep the app
+on trusted networks (a home LAN, a private VPN like Tailscale), and don't expose it to the internet
+without a reverse proxy that adds HTTPS and its own login (list it in `TRUSTED_PROXIES`). See
+[docs/configuration.md](docs/configuration.md#login).
 
 ## Development
 

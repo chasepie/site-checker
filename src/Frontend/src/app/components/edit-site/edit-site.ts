@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ChangeDetectionStrategy, Component, effect,
-  inject, linkedSignal, signal
+  inject, signal
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
@@ -28,33 +28,11 @@ const FALSE = 'false' as const;
 export class EditSite {
   protected readonly activeModal = inject(NgbActiveModal);
   private readonly _siteStore = inject(SiteStore);
-  private readonly _linkedSite = linkedSignal(() => {
-    const reqSite = this._siteStore.selectedSiteOrThrow();
-    const schedule = reqSite.schedule;
-    const psConfig = reqSite.pushoverConfig;
-    const dcConfig = reqSite.discordConfig;
+  // Copied once, not linked to the store, whose Sites are replaced whenever they load again (such
+  // as after the hub reconnects), which would discard unsaved changes.
+  private readonly _draft = signal(toFormModel(this._siteStore.selectedSiteOrThrow()));
 
-    return {
-      ...reqSite,
-      schedule: {
-        ...schedule,
-        interval: schedule.interval?.toString() ?? '',
-      },
-      pushoverConfig: {
-        ...psConfig,
-        successPriority: psConfig.successPriority ?? '' as const,
-        failurePriority: psConfig.failurePriority ?? '' as const,
-      },
-      discordConfig: {
-        ...dcConfig,
-        channelId: dcConfig.channelId ?? '',
-        successEnabled: dcConfig.successEnabled ? TRUE : FALSE,
-        failureEnabled: dcConfig.failureEnabled ? TRUE : FALSE,
-      },
-    };
-  });
-
-  private readonly _originalSite = this._linkedSite();
+  private readonly _originalSite = this._draft();
 
   protected readonly _isValidated = signal(false);
 
@@ -72,7 +50,7 @@ export class EditSite {
     { value: FALSE, label: 'Off' },
   ];
 
-  protected readonly siteForm = form(this._linkedSite, (path) => {
+  protected readonly siteForm = form(this._draft, (path) => {
     pattern(path.url, /^(https?:\/\/)/, {
       message: 'URL must start with http:// or https://'
     });
@@ -94,7 +72,7 @@ export class EditSite {
     this.configureScheduleForm(path);
     this.configureDiscordForm(path);
 
-    setValidatedMetadata(path, this._linkedSite(), this._isValidated);
+    setValidatedMetadata(path, this._draft(), this._isValidated);
   });
 
   protected get pushoverForm() {
@@ -123,7 +101,7 @@ export class EditSite {
     });
   }
 
-  private configureScheduleForm(path: SchemaPathTree<ReturnType<typeof this._linkedSite>>) {
+  private configureScheduleForm(path: SchemaPathTree<SiteFormModel>) {
     const schedule = path.schedule;
 
     min(schedule.interval, 1, {
@@ -150,7 +128,7 @@ export class EditSite {
     });
   }
 
-  private configureDiscordForm(path: SchemaPathTree<ReturnType<typeof this._linkedSite>>) {
+  private configureDiscordForm(path: SchemaPathTree<SiteFormModel>) {
     const discord = path.discordConfig;
 
     required(discord.channelId, {
@@ -234,4 +212,32 @@ export class EditSite {
     this.siteForm().reset();
     this._isValidated.set(false);
   }
+}
+
+type SiteFormModel = ReturnType<typeof toFormModel>;
+
+/** The form's model of a Site, in the strings its inputs and selects use. */
+function toFormModel(site: Site) {
+  const schedule = site.schedule;
+  const psConfig = site.pushoverConfig;
+  const dcConfig = site.discordConfig;
+
+  return {
+    ...site,
+    schedule: {
+      ...schedule,
+      interval: schedule.interval?.toString() ?? '',
+    },
+    pushoverConfig: {
+      ...psConfig,
+      successPriority: psConfig.successPriority ?? '' as const,
+      failurePriority: psConfig.failurePriority ?? '' as const,
+    },
+    discordConfig: {
+      ...dcConfig,
+      channelId: dcConfig.channelId ?? '',
+      successEnabled: dcConfig.successEnabled ? TRUE : FALSE,
+      failureEnabled: dcConfig.failureEnabled ? TRUE : FALSE,
+    },
+  };
 }

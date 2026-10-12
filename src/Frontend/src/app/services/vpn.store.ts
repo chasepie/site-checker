@@ -68,11 +68,13 @@ export const VpnStore = signalStore(
         )
         .subscribe();
 
-      void store._controller.getCurrentLocation()
-        .then(currLoc => { store._updateCurrentLocation(currLoc); });
+      store._signalrService.loadOnConnect(() => store._controller.getCurrentLocation())
+        .pipe(takeUntilDestroyed())
+        .subscribe(currLoc => { store._updateCurrentLocation(currLoc); });
 
-      void store._controller.getAllLocations()
-        .then(allLocs => { store._upsertLocations(allLocs); });
+      store._signalrService.loadOnConnect(() => store._controller.getAllLocations())
+        .pipe(takeUntilDestroyed())
+        .subscribe(allLocs => { store._upsertLocations(allLocs); });
     },
   })
 );
