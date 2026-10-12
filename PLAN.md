@@ -85,7 +85,13 @@ A worker that is stuck in a synchronous loop exits so Docker restarts it, which 
   - The admin token's wording now says Sites and Test Runs "upload or run a script" rather than "run code on the host", which stopped being true with the worker.
   - Final pass on the rebuilt stack (real Browserless, VPN stand-ins): from the UI, a Test Run of the Bot Detection demo asked for the admin token, ran in the worker, and showed "Succeeded in 2.0 s", "Test Results:Normal" and the screenshot over SignalR. CI build (locked restore, Release, 0 warnings), 235 tests and frontend lint pass.
 - [x] Code review (`/code-review --fix`, xhigh): 20 findings, 15 fixed. The ones that mattered: a run the app abandons by cancelling is now closed and tracked, so a stuck script can't outlive it; the app's response allowance is derived from the worker's limits (75 s); the worker's script cache is keyed by the hash of the source it compiles; fresh Linux installs get `mkdir`/`chown` steps; and `loc.txt` is replaced atomically. 239 tests pass.
-  - Open: the worker's `/scrape` has no authentication, so anything that reaches it (the Browserless containers, a LAN client with the Browserless token, DNS rebinding) runs code without the admin token. Next: a shared `SCRAPE_WORKER_SECRET`, host filtering on the worker, and unpublished Browserless ports.
+- [x] Worker secret (the review's open finding: the worker's `/scrape` took code from anything that reached it)
+  - `SCRAPE_WORKER_SECRET` (`ScrapeWorkerSecret` in `src/Scraper`) is sent as a bearer token by the app's named client and required by the worker on `/scrape` and `/scripts`; `/healthz` stays open for Docker. Both sides fail at startup without it outside Development. The worker answers only to `scrape-worker` and `localhost` (`AllowedHosts` in its appsettings), and Browserless's ports are published on `127.0.0.1` only.
+  - Verified on the full stack with the real PIA VPN (credentials from `.env`; throwaway `ADMIN_TOKEN` and `SCRAPE_WORKER_SECRET` passed from the shell, scratch volumes):
+    - the PIA Location demo Site, VPN-routed through the worker over the `scrape` network, reported "Detroit, United States" at `us_michigan-pf`
+    - `ChangeLocation` went through the socket proxy (0 blocked requests), wrote `loc.txt` and restarted both VPN containers; the next check reported "Seattle, United States" at `us_seattle`
+    - from inside Browserless, `POST /scrape` without the secret got 401 (`/healthz` 200); with the secret but a foreign Host header, 400
+    - 253 tests pass
   - Next, on a stacked `login` branch: a single-user login replaces the admin token.
 - [ ] Remove `PLAN.md`, then open the PR
 

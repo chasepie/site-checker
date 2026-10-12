@@ -79,7 +79,7 @@ I've been able to use this tool to purchase a GPU during the 2020 chip shortage,
 2. **Configure environment variables**
    ```bash
    cp example.env .env
-   # Edit .env with your configuration. ADMIN_PASSWORD and ALLOWED_HOSTS are required.
+   # Edit .env with your configuration. ADMIN_PASSWORD, ALLOWED_HOSTS and SCRAPE_WORKER_SECRET are required.
    ```
 
    On Linux, also create the data directories for the app's non-root user (UID 1654), since Docker
@@ -141,9 +141,9 @@ enforces, and how to set up an authoring project with the `SiteChecker.Scripting
 ## Security
 
 The app is behind a single-user login (`ADMIN_PASSWORD`). Uploaded scripts run unsandboxed, but in
-the Scrape Worker container: it has no secrets but the Browserless token, no volumes, no Docker
-access and no route out except through the browsers. The app reaches Docker only through a socket
-proxy that can do nothing but restart the VPN containers.
+the Scrape Worker container: it has no secrets but the Browserless token and its own secret, no
+volumes, no Docker access and no route out except through the browsers. The app reaches Docker only
+through a socket proxy that can do nothing but restart the VPN containers.
 
 The login is one shared password, so keep the app on trusted networks (a home LAN, a private VPN like
 Tailscale), and don't expose it to the internet without a reverse proxy that adds HTTPS and its own

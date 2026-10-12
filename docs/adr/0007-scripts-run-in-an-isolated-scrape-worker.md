@@ -3,10 +3,11 @@
 > Supersedes [ADR 0004](0004-scripts-run-in-process-behind-a-trust-boundary.md).
 
 Script Scrapers run in the **Scrape Worker**, a container of their own, not in the app. The app sends each scrape over HTTP (`RemoteScraperService`, `SCRAPE_WORKER_URL`) and gets the `ScrapeResult` back. The pipeline writes nothing and the result carries everything, including the page's HTML and the Scraper's log. The worker:
-- holds no secrets but the Browserless token
+- holds no secrets but the Browserless token and its own secret (below)
 - mounts nothing and can't reach Docker
 - runs non-root on a read-only filesystem, with memory and process limits
 - sits on an internal network shared only with the app and the browsers, so it reaches the internet only through them
+- only takes requests carrying a secret shared with the app (`SCRAPE_WORKER_SECRET`) and addressed to its own host name, since the browsers on its network load untrusted pages
 
 When a run abandoned at its timeout is still going 15 s later, the worker stops and Docker restarts it, which frees the stuck thread.
 

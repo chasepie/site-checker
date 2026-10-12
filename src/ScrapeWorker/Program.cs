@@ -6,7 +6,7 @@ namespace SiteChecker.ScrapeWorker;
 
 /// <summary>
 /// The Scrape Worker: runs scrapes for the app in a container of their own, with no secrets but the
-/// Browserless token, no database and no Docker access, so a script can reach none of them. The app
+/// Browserless token and its own secret, no database and no Docker access, so a script can reach none of them. The app
 /// talks to it through <c>RemoteScraperService</c>; see <see cref="ScrapeWorkerEndpoints"/>.
 /// </summary>
 public sealed class Program

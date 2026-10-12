@@ -12,10 +12,17 @@ using BrowserType = SiteChecker.Scraper.BrowserType;
 
 /// <summary>
 /// The real worker, compiling scripts for real, with a substituted browser and a monitor whose
-/// abandoned runs a test sets, so nothing stops the test host.
+/// abandoned runs a test sets, so nothing stops the test host. It requires <see cref="Secret"/>,
+/// which clients it creates send.
 /// </summary>
-internal sealed class ScrapeWorkerFactory : WebApplicationFactory<SiteChecker.ScrapeWorker.Program>
+/// <param name="environment">The host environment; Development unless a test needs another.</param>
+/// <param name="secret">The worker's secret; <c>null</c> runs it without one.</param>
+internal sealed class ScrapeWorkerFactory(
+    string? environment = null,
+    string? secret = ScrapeWorkerFactory.Secret) : WebApplicationFactory<SiteChecker.ScrapeWorker.Program>
 {
+    public const string Secret = "test-worker-secret";
+
     public static readonly byte[] ScreenshotBytes = [1, 2, 3];
 
     public IPage Page { get; } = Substitute.For<IPage>();
@@ -46,11 +53,23 @@ internal sealed class ScrapeWorkerFactory : WebApplicationFactory<SiteChecker.Sc
                 return session;
             });
 
+        builder.UseEnvironment(environment ?? Microsoft.Extensions.Hosting.Environments.Development);
+        // Empty rather than absent, so a value from the developer's .env can't fill it in.
+        builder.UseSetting(ScrapeWorkerSecret.Key, secret ?? string.Empty);
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton(browsers);
             services.AddSingleton<IAbandonedRunMonitor>(AbandonedRuns);
         });
+    }
+
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        if (secret is not null)
+        {
+            client.DefaultRequestHeaders.Authorization = new("Bearer", secret);
+        }
     }
 }
 
