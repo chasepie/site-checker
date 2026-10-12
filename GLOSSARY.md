@@ -80,6 +80,10 @@ _Avoid_: Recovery action, follow-up
 A scrape of a Site's Scraper, usually an unsaved one, run to try it out. It isn't a Site Check: it isn't recorded, never notifies, and carries out no Requested Actions.
 _Avoid_: Dry run, preview, test check
 
+**Scrape Worker**:
+The separate process, its own container in Docker, that runs every scrape and so every script, away from the app's secrets, database and Docker access. The app sends it each scrape and records the Scrape Result it returns.
+_Avoid_: Scraper service, runner, sandbox
+
 **VPN Location**:
 The PIA region that VPN-routed Site Checks are scraped from; rotated on an interval.
 _Avoid_: Region, server

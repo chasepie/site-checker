@@ -6,6 +6,7 @@ import {
   CreatedEntityChange, DeletedEntityChange,
   PiaLocation,
   SignalRConstants,
+  TestRunResult,
   UpdatedEntityChange
 } from '../generated/model';
 
@@ -30,6 +31,8 @@ export class SignalrService {
         const result = zodType.safeParse(data);
         if (result.success) {
           sub.next(result.data);
+        } else {
+          console.warn(`Ignored a ${methodName} message that doesn't match its schema.`, result.error, data);
         }
       };
 
@@ -44,6 +47,8 @@ export class SignalrService {
   public readonly entityUpdated$ = this.getObservable(UpdatedEntityChange, SignalRConstants.OnEntityUpdatedKey);
   public readonly entityDeleted$ = this.getObservable(DeletedEntityChange, SignalRConstants.OnEntityDeletedKey);
   public readonly locationChanged$ = this.getObservable(PiaLocation, SignalRConstants.OnLocationChangedKey);
+  /** Sent only to the connection that started the Test Run. */
+  public readonly testRunCompleted$ = this.getObservable(TestRunResult, SignalRConstants.OnTestRunCompletedKey);
 
   /**
    * Emits each time the connection is made, including by automatic reconnecting. The events sent

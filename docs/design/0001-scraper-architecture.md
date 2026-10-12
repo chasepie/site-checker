@@ -148,7 +148,7 @@ public sealed class PiaLocation : IScript
         {
             await location.WaitForAsync(new() { Timeout = 10_000 });
         }
-        catch (Microsoft.Playwright.TimeoutException) // qualified: System also has a TimeoutException
+        catch (TimeoutException) // Playwright reports timeouts as System.TimeoutException
         {
             return ScriptOutcome.KnownFailure("Location not shown", RequestedAction.Retry);
         }

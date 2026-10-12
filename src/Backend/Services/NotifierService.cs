@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SiteChecker.Backend.Notifiers;
 using SiteChecker.Database;
+using SiteChecker.Database.Extensions;
 using SiteChecker.Database.Model;
 
 namespace SiteChecker.Backend.Services;
@@ -135,29 +136,8 @@ public sealed class NotifierService(
         CancellationToken cancellationToken)
     {
         var site = siteCheck.Site;
-        var doneDate = siteCheck.DoneDate!.Value;
-        var siteChecks = dbContext.SiteChecks.Where(sc => sc.SiteId == site.Id);
-
-        // History is ordered by when checks finished (DoneDate, then Id), not by when they were
-        // created: an Empty Check recorded while a check is open finishes first.
-        var finishedBefore = siteChecks.Where(sc =>
-            sc.DoneDate < doneDate || (sc.DoneDate == doneDate && sc.Id < siteCheck.Id));
-
-        var previousDone = await finishedBefore
-            .Where(sc => sc.Status == CheckStatus.Done)
-            .OrderByDescending(sc => sc.DoneDate)
-            .ThenByDescending(sc => sc.Id)
-            .Select(sc => new { sc.Id, sc.DoneDate, sc.Value })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        // The Failing Run before this check: every Failed check that finished since the previous Done.
-        var failedRunBefore = finishedBefore.Where(sc => sc.Status == CheckStatus.Failed);
-        if (previousDone != null)
-        {
-            failedRunBefore = failedRunBefore.Where(sc =>
-                sc.DoneDate > previousDone.DoneDate
-                || (sc.DoneDate == previousDone.DoneDate && sc.Id > previousDone.Id));
-        }
+        var (baseline, failedRunBefore) = await dbContext.SiteChecks.FailingRunBeforeAsync(
+            site.Id, siteCheck.CompletedDate!.Value, siteCheck.Id, cancellationToken);
 
         // Counted in the database: a long Failing Run can hold thousands of checks.
         var runBefore = new RunSummary(
@@ -179,9 +159,9 @@ public sealed class NotifierService(
             return Build(NotificationKind.Failing, $"{site.Name} Check Failed", body, siteCheck);
         }
 
-        // Done. A Site's first Done check is only a baseline, so it never counts as changed.
-        var contentChanged = previousDone != null
-            && !string.Equals(previousDone.Value, siteCheck.Value, StringComparison.Ordinal);
+        // Succeeded. A Site's first Succeeded check only sets the Baseline, so it never counts as changed.
+        var contentChanged = baseline != null
+            && !string.Equals(baseline.Value, siteCheck.Value, StringComparison.Ordinal);
 
         if (runBefore.Reported)
         {

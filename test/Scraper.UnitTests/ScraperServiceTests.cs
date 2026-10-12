@@ -1,0 +1,396 @@
+namespace SiteChecker.Scraper.UnitTests;
+
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Playwright;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using SiteChecker.Scraper;
+using SiteChecker.Scraper.Browsers;
+using SiteChecker.Scraper.Executors;
+using SiteChecker.Scraper.Scripts;
+using SiteChecker.Scripting;
+using BrowserType = SiteChecker.Scraper.BrowserType;
+
+/// <summary>
+/// The shared pipeline, with a substituted browser and page and fake executors.
+/// </summary>
+[TestClass]
+public sealed class ScraperServiceTests : IDisposable
+{
+    private static readonly Uri SiteUrl = new("https://example.com/site");
+    private static readonly byte[] ScreenshotBytes = [1, 2, 3];
+
+    /// <summary>
+    /// Short, because timeout tests wait for it in real time.
+    /// </summary>
+    private static readonly TimeSpan ShortTimeout = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>
+    /// The deadline's timer runs on a coarse clock, so it can fire up to one tick (about 15.6 ms on
+    /// Windows) before the stopwatch that measures <see cref="ScrapeResult.Duration"/> says it's due.
+    /// </summary>
+    private static readonly TimeSpan TimerTolerance = TimeSpan.FromMilliseconds(16);
+
+    private readonly IPage _page = Substitute.For<IPage>();
+    private readonly IBrowserSession _session = Substitute.For<IBrowserSession>();
+    private readonly IBrowserProvider _browsers = Substitute.For<IBrowserProvider>();
+    private readonly IResponse _response = Substitute.For<IResponse>();
+    private readonly ManualResetEventSlim _releaseBlockedExecutors = new();
+    private readonly ScriptCache _scriptCache = new(Substitute.For<IScriptCompiler>());
+    private readonly IAbandonedRunMonitor _abandonedRuns = Substitute.For<IAbandonedRunMonitor>();
+
+    public TestContext TestContext { get; set; } = null!;
+
+    private CancellationToken Ct => TestContext.CancellationToken;
+
+    [TestInitialize]
+    public void Initialize()
+    {
+        _response.Ok.Returns(true);
+        _response.Status.Returns(200);
+        _page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions?>()).Returns(_response);
+        _page.ScreenshotAsync(Arg.Any<PageScreenshotOptions?>()).Returns(ScreenshotBytes);
+        _page.ContentAsync().Returns("<html>page</html>");
+        _session.Page.Returns(_page);
+        _browsers.OpenAsync(Arg.Any<BrowserType>(), Arg.Any<CancellationToken>()).Returns(_session);
+    }
+
+    public void Dispose()
+    {
+        _releaseBlockedExecutors.Set();
+        _releaseBlockedExecutors.Dispose();
+        _scriptCache.Dispose();
+    }
+
+    /// <summary>
+    /// The kind of Scraper <see cref="FakeExecutor"/> runs.
+    /// </summary>
+    private sealed record FakeSpec : ScraperSpec;
+
+    private sealed class FakeExecutor(Func<ExecutorContext, Task<ScrapeResult>> execute) : IScrapeExecutor
+    {
+        public Type SpecType => typeof(FakeSpec);
+
+        public Task<ScrapeResult> ExecuteAsync(ExecutorContext context) => execute(context);
+    }
+
+    private ScraperService CreateService(Func<ExecutorContext, Task<ScrapeResult>> execute) => new(
+        new BrowserSelector(new ConfigurationBuilder().Build()),
+        _browsers,
+        [new FakeExecutor(execute)],
+        _scriptCache,
+        new ScrapeTimeouts(new ConfigurationBuilder().Build(), NullLogger<ScrapeTimeouts>.Instance),
+        _abandonedRuns,
+        TimeProvider.System,
+        NullLogger<ScraperService>.Instance);
+
+    private static ScrapeRequest Request(int? siteCheckId = 7, bool alwaysTakeScreenshot = false, TimeSpan? timeout = null) => new()
+    {
+        SiteCheckId = siteCheckId,
+        Site = new ScrapeSite(3, "Site", SiteUrl, UseVpn: false),
+        Scraper = new FakeSpec(),
+        AlwaysTakeScreenshot = alwaysTakeScreenshot,
+        Timeout = timeout,
+    };
+
+    // ---- Navigation ----
+
+    [TestMethod]
+    public async Task NavigatesToTheSiteUrl_BeforeTheExecutorRuns()
+    {
+        var navigatedBeforeExecutor = false;
+        IResponse? responseSeen = null;
+        var service = CreateService(ctx =>
+        {
+            navigatedBeforeExecutor = _page.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(IPage.GotoAsync));
+            responseSeen = ctx.Navigation.Response;
+            return Task.FromResult(ScrapeResult.Succeeded("content"));
+        });
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        Assert.AreEqual(ScrapeOutcome.Succeeded, result.Outcome);
+        Assert.AreEqual("content", result.Content);
+        await _page.Received(1).GotoAsync(SiteUrl.AbsoluteUri, Arg.Any<PageGotoOptions?>());
+        Assert.IsTrue(navigatedBeforeExecutor);
+        Assert.AreSame(_response, responseSeen);
+    }
+
+    [TestMethod]
+    public async Task NavigationError_ReachesTheExecutor_InsteadOfFailingTheScrape()
+    {
+        var error = new InvalidOperationException("net::ERR_CONNECTION_RESET");
+        _page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions?>()).ThrowsAsync(error);
+        Exception? errorSeen = null;
+        var service = CreateService(ctx =>
+        {
+            errorSeen = ctx.Navigation.Error;
+            return Task.FromResult(ScrapeResult.KnownFailure("Blocked", [RequestedAction.ChangeVpnLocation, RequestedAction.Retry]));
+        });
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        Assert.AreSame(error, errorSeen);
+        Assert.AreEqual(ScrapeOutcome.KnownFailure, result.Outcome);
+        Assert.AreEqual("Blocked", result.Message);
+        CollectionAssert.AreEqual(
+            new[] { RequestedAction.ChangeVpnLocation, RequestedAction.Retry },
+            result.RequestedActions.ToArray());
+    }
+
+    // ---- Failures ----
+
+    [TestMethod]
+    public async Task ExecutorThatThrows_IsAnUnexpectedFailure_WithTheExceptionAndPageHtml()
+    {
+        var service = CreateService(_ => throw new InvalidOperationException("selector not found"));
+
+        var result = await service.ScrapeAsync(Request(siteCheckId: 7), Ct);
+
+        Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
+        Assert.AreEqual("selector not found", result.Message);
+        Assert.AreEqual(typeof(InvalidOperationException).FullName, result.ExceptionType);
+        Assert.Contains("selector not found", result.ExceptionDetail!);
+        Assert.AreEqual("<html>page</html>", result.PageHtml);
+    }
+
+    [TestMethod]
+    public async Task TestRun_CapturesNoPageHtml()
+    {
+        var service = CreateService(_ => throw new InvalidOperationException("selector not found"));
+
+        var result = await service.ScrapeAsync(Request(siteCheckId: null), Ct);
+
+        Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
+        Assert.IsNull(result.PageHtml);
+        await _page.DidNotReceive().ContentAsync();
+    }
+
+    [TestMethod]
+    public async Task KnownFailure_CapturesNoPageHtml()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.KnownFailure("blocked")));
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        Assert.IsNull(result.PageHtml);
+    }
+
+    // ---- Logs ----
+
+    [TestMethod]
+    public async Task Logs_WrittenThroughTheContext_AreInTheResult()
+    {
+        var service = CreateService(ctx =>
+        {
+            var logger = ctx.Log.Wrap(NullLogger.Instance);
+            logger.LogInformation("found {Count} items", 3);
+            return Task.FromResult(ScrapeResult.Succeeded("content"));
+        });
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        var entry = Assert.ContainsSingle(result.Logs);
+        Assert.AreEqual(LogLevel.Information, entry.Level);
+        Assert.AreEqual("found 3 items", entry.Message);
+    }
+
+    [TestMethod]
+    public async Task Logs_BeforeATimeout_AreInTheResult()
+    {
+        var service = CreateService(async ctx =>
+        {
+            ctx.Log.Wrap(NullLogger.Instance).LogWarning("still waiting");
+            await Task.Delay(Timeout.Infinite, CancellationToken.None);
+            return ScrapeResult.Succeeded("unreachable");
+        });
+
+        var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        AssertTimedOut(result);
+        Assert.AreEqual("still waiting", Assert.ContainsSingle(result.Logs).Message);
+    }
+
+    [TestMethod]
+    public async Task BrowserThatWontOpen_IsAnUnexpectedFailure()
+    {
+        _browsers.OpenAsync(Arg.Any<BrowserType>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("connection refused"));
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("unreachable")));
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
+        Assert.AreEqual("Couldn't open the browser: connection refused", result.Message);
+    }
+
+    [TestMethod]
+    public async Task ScraperWithNoExecutor_IsAnUnexpectedFailure()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("unreachable")));
+        var request = Request() with { Scraper = new ScriptSpec("Script.cs", "", "") };
+
+        var result = await service.ScrapeAsync(request, Ct);
+
+        Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
+        await _browsers.DidNotReceive().OpenAsync(Arg.Any<BrowserType>(), Arg.Any<CancellationToken>());
+    }
+
+    // ---- Timeout ----
+
+    [TestMethod]
+    public async Task Timeout_EndsARunThatIgnoresItsToken()
+    {
+        var neverCompletes = new TaskCompletionSource<ScrapeResult>();
+        var service = CreateService(_ => neverCompletes.Task);
+
+        var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        AssertTimedOut(result);
+    }
+
+    [TestMethod]
+    public async Task Timeout_EndsARunThatBlocksSynchronously()
+    {
+        var service = CreateService(_ =>
+        {
+            _releaseBlockedExecutors.Wait(Ct);
+            return Task.FromResult(ScrapeResult.Succeeded("too late"));
+        });
+
+        var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        AssertTimedOut(result);
+        _abandonedRuns.Received(1).Track(Arg.Any<Task>(), Arg.Is<ScrapeRequest>(r => r.SiteCheckId == 7));
+    }
+
+    [TestMethod]
+    public async Task Cancellation_ClosesTheBrowser_AndTracksARunThatIsStillGoing()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var started = new TaskCompletionSource();
+        var service = CreateService(_ =>
+        {
+            started.SetResult();
+            _releaseBlockedExecutors.Wait(Ct);
+            return Task.FromResult(ScrapeResult.Succeeded("too late"));
+        });
+
+        var scrape = service.ScrapeAsync(Request(), cancellation.Token);
+        await started.Task.WaitAsync(Ct);
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => scrape);
+        await _session.Received().CloseAsync();
+        _abandonedRuns.Received(1).Track(Arg.Any<Task>(), Arg.Is<ScrapeRequest>(r => r.SiteCheckId == 7));
+    }
+
+    [TestMethod]
+    public async Task RunThatEndsInTime_IsNotTrackedAsAbandoned()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));
+
+        await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        _abandonedRuns.DidNotReceiveWithAnyArgs().Track(default!, default!);
+    }
+
+    [TestMethod]
+    public async Task Timeout_CancelsTheExecutorsToken()
+    {
+        var tokenCancelled = new TaskCompletionSource();
+        var service = CreateService(async ctx =>
+        {
+            ctx.CancellationToken.Register(tokenCancelled.SetResult);
+            await Task.Delay(Timeout.Infinite, CancellationToken.None);
+            return ScrapeResult.Succeeded("unreachable");
+        });
+
+        var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        AssertTimedOut(result);
+        await tokenCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5), Ct);
+    }
+
+    [TestMethod]
+    public async Task Timeout_IsReportedAsATimeout_WhenTheRunStopsOnItsToken()
+    {
+        // A cooperative script throws as soon as its token is cancelled, which can end the run
+        // before the pipeline's own deadline fires.
+        var service = CreateService(async ctx =>
+        {
+            await Task.Delay(Timeout.Infinite, ctx.CancellationToken);
+            return ScrapeResult.Succeeded("unreachable");
+        });
+
+        var result = await service.ScrapeAsync(Request(timeout: ShortTimeout), Ct);
+
+        AssertTimedOut(result);
+    }
+
+    private void AssertTimedOut(ScrapeResult result)
+    {
+        Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
+        Assert.AreEqual("Timed out after 0.2 s.", result.Message);
+        Assert.IsGreaterThanOrEqualTo(ShortTimeout - TimerTolerance, result.Duration);
+        CollectionAssert.AreEqual(ScreenshotBytes, result.Screenshot);
+        _session.Received().CloseAsync();
+    }
+
+    // ---- Screenshots ----
+
+    [TestMethod]
+    public async Task Screenshot_IsNotTaken_WhenTheScrapeSucceeds()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        Assert.IsNull(result.Screenshot);
+        await _page.DidNotReceive().ScreenshotAsync(Arg.Any<PageScreenshotOptions?>());
+    }
+
+    [TestMethod]
+    public async Task Screenshot_IsTaken_WhenTheSiteAlwaysTakesOne()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));
+
+        var result = await service.ScrapeAsync(Request(alwaysTakeScreenshot: true), Ct);
+
+        CollectionAssert.AreEqual(ScreenshotBytes, result.Screenshot);
+    }
+
+    [TestMethod]
+    public async Task Screenshot_IsTaken_OnAKnownFailure()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.KnownFailure("Access denied")));
+
+        var result = await service.ScrapeAsync(Request(), Ct);
+
+        CollectionAssert.AreEqual(ScreenshotBytes, result.Screenshot);
+    }
+
+    [TestMethod]
+    public async Task ScreenshotFailure_DoesNotChangeTheOutcome()
+    {
+        _page.ScreenshotAsync(Arg.Any<PageScreenshotOptions?>()).ThrowsAsync(new InvalidOperationException("page crashed"));
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));
+
+        var result = await service.ScrapeAsync(Request(alwaysTakeScreenshot: true), Ct);
+
+        Assert.AreEqual(ScrapeOutcome.Succeeded, result.Outcome);
+        Assert.IsNull(result.Screenshot);
+    }
+
+    [TestMethod]
+    public async Task Session_IsClosed_AfterEveryScrape()
+    {
+        var service = CreateService(_ => Task.FromResult(ScrapeResult.Succeeded("content")));
+
+        await service.ScrapeAsync(Request(), Ct);
+
+        await _session.Received(1).DisposeAsync();
+    }
+}

@@ -5,6 +5,8 @@ using SiteChecker.Backend.Models;
 using SiteChecker.Backend.Services.VPN;
 using SiteChecker.Database.Model;
 using SiteChecker.Database.Services;
+using SiteChecker.Scraper;
+using SiteChecker.Scraper.Scripts;
 
 namespace SiteChecker.Backend.Generators;
 
@@ -45,6 +47,9 @@ public static partial class ReinforcedTypingsConfiguration
             typeof(CheckStatus),
             typeof(FailureKind),
             typeof(PushoverPriority),
+            typeof(RequestedAction),
+            typeof(ScrapeOutcome),
+            typeof(ScraperKind),
         };
         builder.ExportAsEnums(enums, builder =>
         {
@@ -69,8 +74,18 @@ public static partial class ReinforcedTypingsConfiguration
             typeof(SiteSchedule),
             typeof(SiteUpdate),
             typeof(SiteCheck),
+            typeof(ScriptScraper),
+            typeof(ScraperDefinition),
             typeof(Site),
             typeof(SiteCheckScreenshot),
+            typeof(SiteScript),
+            typeof(ScriptDiagnostic),
+            typeof(ScriptUpload),
+            typeof(ScraperRequest),
+            typeof(SiteRequest),
+            typeof(SiteValidationResult),
+            typeof(TestRunRequest),
+            typeof(TestRunResult),
             typeof(LoginRequest),
             typeof(SessionInfo),
         };

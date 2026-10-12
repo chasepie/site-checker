@@ -1,0 +1,12 @@
+<Project Sdk="MSTest.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ScrapeWorker\ScrapeWorker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+</Project>

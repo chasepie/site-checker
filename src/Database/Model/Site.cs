@@ -1,5 +1,5 @@
 using System.ComponentModel.DataAnnotations;
-using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 
 namespace SiteChecker.Database.Model;
 
@@ -17,15 +17,25 @@ public class SiteUpdate : IEntityWithId
     [Range(1, 999)]
     public int KnownFailuresThreshold { get; set; } = KNOWN_FAILURES_THRESHOLD_DEFAULT;
 
+    /// <summary>
+    /// How long a scrape may run, in seconds. <c>null</c> uses <c>SCRAPE_TIMEOUT</c>.
+    /// </summary>
+    public int? TimeoutSeconds { get; set; }
+
     public SiteSchedule Schedule { get; set; } = new();
     public PushoverConfig PushoverConfig { get; set; } = new();
     public DiscordConfig DiscordConfig { get; set; } = new();
 }
 
-[Index(nameof(ScraperId), IsUnique = true)]
 public class Site : SiteUpdate
 {
-    public required string ScraperId { get; set; }
+    public ScraperDefinition Scraper { get; set; } = new();
+
+    /// <summary>
+    /// The Script Scraper's source. Loaded only where it's needed, and never serialized with the Site.
+    /// </summary>
+    [JsonIgnore]
+    public SiteScript? SiteScript { get; set; }
 
     public ICollection<SiteCheck> SiteChecks { get; set; } = [];
 
@@ -36,6 +46,7 @@ public class Site : SiteUpdate
         UseVpn = update.UseVpn;
         AlwaysTakeScreenshot = update.AlwaysTakeScreenshot;
         KnownFailuresThreshold = update.KnownFailuresThreshold;
+        TimeoutSeconds = update.TimeoutSeconds;
         Schedule.Update(update.Schedule);
         PushoverConfig.Update(update.PushoverConfig);
         DiscordConfig.Update(update.DiscordConfig);
