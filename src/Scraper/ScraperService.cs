@@ -117,7 +117,18 @@ public sealed class ScraperService(
                 var deadline = Task.Delay(timeout, _timeProvider, stopWaiting.Token);
                 var first = await Task.WhenAny(run, deadline);
                 await stopWaiting.CancelAsync();
-                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    // The caller gave up (in the Scrape Worker, the app's request was aborted), so
+                    // the run is abandoned just as at a timeout: its token is already cancelled
+                    // through runCancellation, and a run that ignores it must still be tracked.
+                    if (!run.IsCompleted)
+                    {
+                        await session.CloseAsync();
+                        _abandonedRuns.Track(run, request);
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
 
                 // A run that threw once the timeout fired (such as a script stopping on its token)
                 // ended because of the timeout, even if it beat the deadline here.

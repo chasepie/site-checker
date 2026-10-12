@@ -3,19 +3,19 @@ using Microsoft.Extensions.Logging;
 namespace SiteChecker.Scraper;
 
 /// <summary>
-/// Decides what happens to a run the pipeline stopped waiting for at its timeout. The pipeline has
-/// already closed the browser, which ends any run waiting on Playwright, but .NET can't stop a
-/// thread, so a run stuck in a synchronous loop keeps going.
+/// Decides what happens to a run the pipeline stopped waiting for, at its timeout or because its
+/// caller gave up. The pipeline has already closed the browser, which ends any run waiting on
+/// Playwright, but .NET can't stop a thread, so a run stuck in a synchronous loop keeps going.
 /// </summary>
 public interface IAbandonedRunMonitor
 {
     /// <summary>
-    /// Whether a run abandoned at its timeout is still going.
+    /// Whether an abandoned run is still going.
     /// </summary>
     bool HasAbandonedRuns { get; }
 
     /// <summary>
-    /// Watches a run the pipeline abandoned at its timeout.
+    /// Watches a run the pipeline abandoned.
     /// </summary>
     void Track(Task run, ScrapeRequest request);
 }
@@ -26,10 +26,21 @@ public interface IAbandonedRunMonitor
 /// </summary>
 public sealed class LoggingAbandonedRunMonitor(ILogger<LoggingAbandonedRunMonitor> logger) : IAbandonedRunMonitor
 {
-    private readonly ILogger<LoggingAbandonedRunMonitor> _logger = logger;
+    private readonly PendingRuns _runs = new(logger);
+
+    public bool HasAbandonedRuns => _runs.Any;
+
+    public void Track(Task run, ScrapeRequest request) => _runs.Track(run, request);
+}
+
+/// <summary>
+/// Counts the abandoned runs still going, and logs each one as it ends.
+/// </summary>
+internal sealed class PendingRuns(ILogger logger)
+{
     private int _pending;
 
-    public bool HasAbandonedRuns => Volatile.Read(ref _pending) > 0;
+    public bool Any => Volatile.Read(ref _pending) > 0;
 
     public void Track(Task run, ScrapeRequest request)
     {
@@ -38,8 +49,8 @@ public sealed class LoggingAbandonedRunMonitor(ILogger<LoggingAbandonedRunMonito
             t =>
             {
                 Interlocked.Decrement(ref _pending);
-                _logger.LogInformation(t.Exception?.GetBaseException(),
-                    "The timed-out run for {SiteName} (Site Check {SiteCheckId}) has ended.", request.Site.Name, request.SiteCheckId);
+                logger.LogInformation(t.Exception?.GetBaseException(),
+                    "The abandoned run for {SiteName} (Site Check {SiteCheckId}) has ended.", request.Site.Name, request.SiteCheckId);
             },
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
@@ -48,7 +59,7 @@ public sealed class LoggingAbandonedRunMonitor(ILogger<LoggingAbandonedRunMonito
 }
 
 /// <summary>
-/// Stops the process when an abandoned run hasn't ended <see cref="Grace"/> after its timeout, so
+/// Stops the process when an abandoned run hasn't ended <see cref="Grace"/> after it was abandoned, so
 /// whatever restarts the process (Docker, for the Scrape Worker) frees its thread. If stopping
 /// gracefully takes longer than <see cref="FailFastDelay"/>, it fails fast. A run that ends within
 /// the grace period changes nothing.
@@ -66,7 +77,7 @@ public sealed class ExitingAbandonedRunMonitor(
     Action<string> failFast) : IAbandonedRunMonitor, IDisposable
 {
     /// <summary>
-    /// How long after its timeout an abandoned run has to end. Closing the browser ends a run
+    /// How long after it was abandoned a run has to end. Closing the browser ends a run
     /// waiting on Playwright within a second or two; only a run that never yields lasts this long.
     /// </summary>
     public static readonly TimeSpan Grace = TimeSpan.FromSeconds(15);
@@ -80,28 +91,22 @@ public sealed class ExitingAbandonedRunMonitor(
     private readonly ILogger<ExitingAbandonedRunMonitor> _logger = logger;
     private readonly Action _stopApplication = stopApplication;
     private readonly Action<string> _failFast = failFast;
-    private readonly List<ITimer> _timers = [];
+    private readonly PendingRuns _runs = new(logger);
+
+    /// <summary>
+    /// The timers that haven't fired yet. Each removes itself when it fires, so a worker that
+    /// times out many runs over its life doesn't keep every run and request alive.
+    /// </summary>
+    private readonly HashSet<ITimer> _timers = [];
     private readonly Lock _lock = new();
-    private int _pending;
     private bool _stopping;
 
-    public bool HasAbandonedRuns => Volatile.Read(ref _pending) > 0;
+    public bool HasAbandonedRuns => _runs.Any;
 
     public void Track(Task run, ScrapeRequest request)
     {
-        Interlocked.Increment(ref _pending);
-        _ = run.ContinueWith(
-            t =>
-            {
-                Interlocked.Decrement(ref _pending);
-                _logger.LogInformation(t.Exception?.GetBaseException(),
-                    "The timed-out run for {SiteName} (Site Check {SiteCheckId}) has ended.", request.Site.Name, request.SiteCheckId);
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-
-        AddTimer(_ => CheckRun(run, request), Grace);
+        _runs.Track(run, request);
+        AddTimer(() => CheckRun(run, request), Grace);
     }
 
     public void Dispose()
@@ -133,17 +138,33 @@ public sealed class ExitingAbandonedRunMonitor(
         }
 
         _logger.LogCritical(
-            "The timed-out run for {SiteName} (Site Check {SiteCheckId}) is still going {Grace} s later, so it can't be stopped; stopping the process to free it.",
+            "The abandoned run for {SiteName} (Site Check {SiteCheckId}) is still going {Grace} s later, so it can't be stopped; stopping the process to free it.",
             request.Site.Name, request.SiteCheckId, Grace.TotalSeconds);
-        AddTimer(_ => _failFast("A timed-out scrape didn't end, and stopping gracefully took too long."), FailFastDelay);
+        AddTimer(() => _failFast("An abandoned scrape didn't end, and stopping gracefully took too long."), FailFastDelay);
         _stopApplication();
     }
 
-    private void AddTimer(TimerCallback callback, TimeSpan dueTime)
+    private void AddTimer(Action callback, TimeSpan dueTime)
     {
         lock (_lock)
         {
-            _timers.Add(_timeProvider.CreateTimer(callback, null, dueTime, Timeout.InfiniteTimeSpan));
+            // Created under the lock, which the callback takes first, so it can't see the timer
+            // before it's assigned.
+            ITimer? timer = null;
+            timer = _timeProvider.CreateTimer(
+                _ =>
+                {
+                    lock (_lock)
+                    {
+                        _timers.Remove(timer!);
+                    }
+                    timer!.Dispose();
+                    callback();
+                },
+                null,
+                dueTime,
+                Timeout.InfiniteTimeSpan);
+            _timers.Add(timer);
         }
     }
 }

@@ -48,7 +48,9 @@ public sealed class PiaServerList(HttpClient httpClient)
         var locations = new List<PiaLocation>();
         foreach (var region in regions.EnumerateArray())
         {
-            if (!region.TryGetProperty("servers", out var servers)
+            if (region.ValueKind != JsonValueKind.Object
+                || !region.TryGetProperty("servers", out var servers)
+                || servers.ValueKind != JsonValueKind.Object
                 || !servers.TryGetProperty("wg", out var wireGuard)
                 || wireGuard.ValueKind != JsonValueKind.Array
                 || wireGuard.GetArrayLength() == 0)
@@ -58,14 +60,18 @@ public sealed class PiaServerList(HttpClient httpClient)
 
             locations.Add(new PiaLocation
             {
-                Id = region.GetProperty("id").GetString()
-                    ?? throw new JsonException("A region has no id."),
-                Name = region.GetProperty("name").GetString()
-                    ?? throw new JsonException("A region has no name."),
+                Id = RequiredString(region, "id"),
+                Name = RequiredString(region, "name"),
                 PortForward = region.TryGetProperty("port_forward", out var portForward)
                     && portForward.ValueKind == JsonValueKind.True,
             });
         }
         return locations;
     }
+
+    /// <exception cref="JsonException">The region has no such string.</exception>
+    private static string RequiredString(JsonElement region, string property)
+        => region.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()!
+            : throw new JsonException($"A region has no {property}.");
 }

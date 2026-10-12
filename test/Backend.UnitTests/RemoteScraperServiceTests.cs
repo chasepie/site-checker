@@ -239,6 +239,23 @@ public sealed class RemoteScraperServiceTests
     }
 
     [TestMethod]
+    public async Task Scrape_KeepsOnlyTheStartOfALongRefusal()
+    {
+        var worker = new FakeWorker
+        {
+            OnRequest = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath == "/healthz"
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                : new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent(new string('x', 10_000)) }),
+        };
+
+        var result = await CreateService(worker).ScrapeAsync(Request(), Ct);
+
+        Assert.AreEqual(ScrapeOutcome.UnexpectedFailure, result.Outcome);
+        Assert.IsLessThan(1_000, result.Message!.Length);
+        Assert.EndsWith("…", result.Message);
+    }
+
+    [TestMethod]
     public async Task Scrape_IsAnUnexpectedFailure_WhenNoResultComesBackInTime()
     {
         var worker = new FakeWorker
